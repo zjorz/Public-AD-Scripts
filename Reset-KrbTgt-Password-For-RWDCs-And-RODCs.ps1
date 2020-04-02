@@ -19,7 +19,7 @@
 	This PoSH Script Resets The KrbTgt Password For RWDCs And RODCs In A Controlled Manner
 
 .VERSION
-	v2.7, 2020-04-02 (UPDATE THE VERSION VARIABLE BELOW)
+	v2.8, 2020-04-02 (UPDATE THE VERSION VARIABLE BELOW)
 	
 .AUTHOR
 	Initial Script/Thoughts.......: Jared Poeppelman, Microsoft
@@ -52,6 +52,8 @@
 	- The deletion of Test KrbTgt Accounts, which is mode 9
 	
 	Behavior:
+	- In this script a DC is reachable/available, if its name is resolvable and connectivity is possible for all of the following ports:
+		TCP:135 (Endpoint Mapper), TCP:389 (LDAP) and TCP:9839 (AD Web Services)
 	- In mode 1 you will always get a list of all RWDCs, and alls RODCs if applicable, in the targeted AD domain that are available/reachable
 		or not
 	- In mode 2 it will create the temporary canary object and, depending on the scope, it will check if it exists in the AD database of the
@@ -128,6 +130,10 @@
 		for DES, RC4, AES128, AES256!
 
 .RELEASE NOTES
+	v2.8, 2020-04-02, Jorge de Almeida Pinto [MVP-EMS]:
+		- Fixed an issue when the RODC itself is not reachable/available, whereas in that case, the source should be the RWDC with the PDC FSMO
+		- Checks to make sure both the RWDC with the PDC FSMO role and the nearest RWDC are available. If either one is not available, the script will abort
+
 	v2.7, 2020-04-02, Jorge de Almeida Pinto [MVP-EMS]:
 		- Added DNS name resolution check to the portConnectionCheck function
 		- To test membership of the administrators group in a remote AD forest the "title" attribute is now used instead of the "displayName" attribute to try to write to it
@@ -1896,7 +1902,7 @@ Function deleteTestKrbTgtADAccount($targetedADdomainRWDCFQDN, $krbTgtSamAccountN
 }
 
 ### Version Of Script
-$version = "v2.7, 2020-04-02"
+$version = "v2.8, 2020-04-02"
 
 ### Clear The Screen
 Clear-Host
@@ -3687,6 +3693,36 @@ Logging "  --> Found [$nrOfUnReachableRODCs] UnReachable RODC(s) In AD Domain...
 Logging "  --> Found [$nrOfUnDetermined] Undetermined RODC(s) In AD Domain..." "REMARK"
 Logging "" "REMARK"
 
+### Mode 2 And 3 And 4 and 5 And 6 And 8 And 9 Only - Making Sure The RWDC With The PDC FSMO And The Nearest RWDC Are Reachable/Available
+If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6 -Or $modeOfOperationNr -eq 8 -Or $modeOfOperationNr -eq 9) {
+	If (($tableOfDCsInADDomain | Where-Object{$_.PDC -eq $true}).Reachable -eq $false) {
+		Logging "" "ERROR"
+		Logging "  --> The RWDC With The PDC FSMO Role '$targetedADdomainRWDCFQDNWithPDCFSMOFQDN' IS NOT Reachable For The Ports '$($ports -join ', ')'..." "ERROR"
+		Logging "" "ERROR"
+
+		$abortDueToUnreachable = $true
+	}
+	
+	If (($tableOfDCsInADDomain | Where-Object{$_."Host Name" -eq $targetedADdomainNearestRWDCFQDN}).Reachable -eq $false) {
+		Logging "" "ERROR"
+		Logging "  --> The Nearest RWDC '$targetedADdomainNearestRWDCFQDN' IS NOT Reachable For The Ports '$($ports -join ', ')'..." "ERROR"
+		Logging "" "ERROR"
+	
+		$abortDueToUnreachable = $true
+	}
+
+	If ($abortDueToUnreachable -eq $true) {
+		Logging "" "ERROR"
+		Logging "  --> Due To Unavailability Issues Of The RWDC With The PDC FSMO Role And/Or The Nearest RWDC, The Script Cannot Continue ..." "ERROR"
+		Logging "  --> Both The RWDC With The PDC FSMO Role And The The Nearest RWDC MUST Be Available/Reachable..." "ERROR"
+		Logging "" "ERROR"
+		Logging "Aborting Script..." "ERROR"
+		Logging "" "ERROR"
+
+		EXIT
+	}
+}
+
 ### Mode 2 And 3 And 4 and 5 And 6 Only - Selecting The KrbTgt Account To Target And Scope If Applicable (Only Applicable To RODCs)
 If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6) {
 	Logging "------------------------------------------------------------------------------------------------------------------------------------------------------" "HEADER"
@@ -3937,13 +3973,22 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 				$targetedADdomainSourceRWDCFQDN = $dcToProcess."Host Name"
 			}
 			If ($targetKrbTgtAccountNr -eq 2 -Or $targetKrbTgtAccountNr -eq 3) {
+				$targetedADdomainDCToProcessReachability = $null
+				$targetedADdomainDCToProcessReachability = $dcToProcess.Reachable
+
 				$targetedADdomainSourceRWDCFQDN = $null
 				$targetedADdomainSourceRWDCFQDN = $dcToProcess."Source RWDC FQDN"
-				$targetedADdomainSourceRWDCReachability = $null
-				$targetedADdomainSourceRWDCReachability = ($tableOfDCsInADDomain | Where-Object{$_."Host Name" -eq $targetedADdomainSourceRWDCFQDN}).Reachable
-				If ($targetedADdomainSourceRWDCReachability -eq $false) {
+
+				If ($targetedADdomainDCToProcessReachability -eq $false -Or $targetedADdomainSourceRWDCFQDN -eq "RODC Unreachable" -Or $targetedADdomainSourceRWDCFQDN -eq "Unknown") {
 					$targetedADdomainSourceRWDCFQDN = ($tableOfDCsInADDomain | Where-Object{$_.PDC -eq $True})."Host Name"
 					$dcToProcess."Source RWDC DSA" = (Get-ADDomainController $targetedADdomainSourceRWDCFQDN -Server $targetedADdomainSourceRWDCFQDN).NTDSSettingsObjectDN
+				} Else {
+					$targetedADdomainSourceRWDCReachability = $null
+					$targetedADdomainSourceRWDCReachability = ($tableOfDCsInADDomain | Where-Object{$_."Host Name" -eq $targetedADdomainSourceRWDCFQDN}).Reachable
+					If ($targetedADdomainSourceRWDCReachability -eq $false) {
+						$targetedADdomainSourceRWDCFQDN = ($tableOfDCsInADDomain | Where-Object{$_.PDC -eq $True})."Host Name"
+						$dcToProcess."Source RWDC DSA" = (Get-ADDomainController $targetedADdomainSourceRWDCFQDN -Server $targetedADdomainSourceRWDCFQDN).NTDSSettingsObjectDN
+					}
 				}
 			}
 			
