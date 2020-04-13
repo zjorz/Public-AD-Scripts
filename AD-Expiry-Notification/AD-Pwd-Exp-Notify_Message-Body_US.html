@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>AD-Password-Expiration-Notification_US</title>
+		<style type="text/css">
+		</style>
+	</head>
+	<body>
+		<P align="center"><img width=595 height=192 src="IMAGE_BASE_FILE_NAME" alt="Password Expiration"></P>
+		<B><P align="center" style="font-size: 24pt; font-family: Arial Narrow, sans-serif; color: red">!!! ATTENTION | Action Required !!!</P></B>
+		<hr size=2 width="95%" align=center>
+		<BR>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">Dear FIRST_NAME,</P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">The current password of the account 'PRINCIPAL_ACCOUNT_NAME' in the 'FQDN_DOMAIN' AD domain will expire at <B>PWD_EXPIRY_DATE</B>. Please change your password as soon as possible!</P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><U>The new password must meet the following requirements:</U></P>
+		<UL>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Min. nr. of characters in a PWD = 'PWD_MIN_LENGTH characters' <BR><I>(The minimum number of characters to be used in a password)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Min. PWD age = 'PWD_MIN_AGE days' <BR><I>(Minimum number of days the new password must be used before it can be changed again)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Max. PWD age = 'PWD_MAX_AGE days' <BR><I>(Maximum number of days the new password can be used before it must be changed again)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Nr. of previous PWDs in history = 'PWD_HISTORY' <BR><I>(Number of new and unique passwords required before an old password can be reused again)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Password complexity enabled? = 'PWD_COMPLEX' <BR><I>(The new password must meet complexity requirements ONLY when configured to 'TRUE')</I></P></LI>
+		</UL>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><U>If password complexity is enabled, the new password must meet the following requirements:</U></P>
+			<UL>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Not contain the user's account name or parts of the user's full name that exceed 2 consecutive characters</P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Be at least 6 characters in length</P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Contain characters from 3 of the following 4 categories:</P>
+					<UL>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Uppercase characters (A through Z)</P></LI>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Lowercase characters (a through z)</P></LI>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Numeric characters (0 through 9)</P></LI>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Non-alphabetic characters (for example, !, $, #, %)</P></LI>
+					</UL>
+				</LI>
+			</UL>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><U>To change/reset your password or register for SSPR use either one of the following steps:</U></P>
+			<UL>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Press [CTRL]+[ALT]+[DEL] and select the 'Change Password' option.<BR><I>(Use this method ONLY when interactively logged on to the 'FQDN_DOMAIN' AD domain in the office)</I></P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Click on the following link: <A href="PWD_CHANGE_URL">Change password of the account 'PRINCIPAL_ACCOUNT_NAME' in the 'FQDN_DOMAIN' AD domain</A><BR><I>(Use this method when NOT interactively logged on to the 'FQDN_DOMAIN' AD domain or when at home or when at a customer)</I></P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Click on the following link: <A href="SSPR_REGISTRATION_URL">Register for Password Reset</A><BR><I>(Use this to register for Self-Service PAssword Reset to be able to reset the password yourself at a later moment)</I></P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Click on the following link: <A href="PWD_RESET_URL">Reset password of the account 'PRINCIPAL_ACCOUNT_NAME' in the 'FQDN_DOMAIN' AD domain</A><BR><I>(Use this method when you have forgotten the current password to the 'FQDN_DOMAIN' AD domain)</I></P></LI>
+			</UL>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><B>Never give out your personal password to anyone!</B></P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><B>We will never ask for your personal password!</B></P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><B>Please DO NOT reply to e-mail message!</B></P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">Thanks!</P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">Your Network Administrator</P>
+	</body>
+</html>

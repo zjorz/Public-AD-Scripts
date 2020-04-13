@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>AD-Password-Expiration-Notification_NL</title>
+		<style type="text/css">
+		</style>
+	</head>
+	<body>
+		<P align="center"><img width=595 height=192 src="IMAGE_BASE_FILE_NAME" alt="Verlopen Wachtwoord"></P>
+		<B><P align="center" style="font-size: 24pt; font-family: Arial Narrow, sans-serif; color: red">!!! ATTENTIE | Actie Benodigd !!!</P></B>
+		<hr size=2 width="95%" align=center>
+		<BR>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">Beste FIRST_NAME,</P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">Het huidige wachtwoord van het account 'PRINCIPAL_ACCOUNT_NAME' in het 'FQDN_DOMAIN' AD domein verloopt op <B>PWD_EXPIRY_DATE</B>. Wijzig a.u.b. uw wachtwoord zo snel als mogelijk!</P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><U>Het nieuwe wachtwoord moet aan de volgende eisen voldoen:</U></P>
+		<UL>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Min. aantal karakters in een wachtwoord = 'PWD_MIN_LENGTH karakters' <BR><I>(Het minimum aantal karakters dat gebruikt moet worden in een wachtwoord)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Min. wachtwoord gebruikersduur = 'PWD_MIN_AGE dagen' <BR><I>(Minimum aantal dagen dat een nieuw wachtwoord gebruikt moet worden voordat het weer gewijzigd mag worden)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Max. wachtwoord gebruikersduur = 'PWD_MAX_AGE dagen' <BR><I>(Maximum aantal dagen dat een bestaande wachtwoord gebruikt mag worden nadat het weer gewijzigd moet worden)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Aantal wachtwoorden die niet hergebruikt mogen worden = 'PWD_HISTORY' <BR><I>(Aantal nieuwe en unieke wachtwoorden die gebruikt moeten worden voordat een eerder gebruikt wachtwoord hergebruikt mag worden)</I></P></LI>
+			<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Wachtwoord complexiteit aan? = PWD_COMPLEX' <BR><I>(Het nieuwe wachtwoord moet voldoen aan de complexiteits eisen wanneer geconfigureerd met 'TRUE')</I></P></LI>
+		</UL>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><U>Wanneer wachtwoord complexiteit aan staat, zijn de wachtwoord eisen als volgt:</U></P>
+			<UL>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Mag niet gelijk zijn aan de logon naam of delen ervan bevatten</P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Moet minstens 6 karakters bevatten</P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Moet karakters bevatten uit minstens 3 van de 4 onderstaande reeksen:</P>
+					<UL>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Hoofdletters (A t/m Z)</P></LI>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Kleine letters (a t/m z)</P></LI>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Numerieke karakters (0 t/m 9)</P></LI>
+						<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Speciale tekens (bijvoorbeeld, !, $, #, %)</P></LI>
+					</UL>
+				</LI>
+			</UL>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><U>Om uw wachtwoord te wijzigen, opnieuw in te stellen of te registeren voor SSPR, gebruik een van de onderstaande methoden:</U></P>
+			<UL>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Druk op [CTRL]+[ALT]+[DEL] en selecteer de 'Wijzig Wachtwoord' optie.<BR><I>(Gebruik deze methode ALLEEN wanneer u interactief ingelogd bent op het 'FQDN_DOMAIN' AD domein op kantoor)</I></P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Klik op de volgende link: <A href="PWD_CHANGE_URL">Wijzig het wachtwoord voor het account 'PRINCIPAL_ACCOUNT_NAME' in het 'FQDN_DOMAIN' AD domein</A><BR><I>(Gebruik deze methode wanneer u NIET interactief ingelogd bent op het 'FQDN_DOMAIN' AD domein of wanneer u niet op kantoor werkzaam bent)</I></P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Klik op de volgende link: <A href="SSPR_REGISTRATION_URL">Registreer voor Password Reset</A><BR><I>(Gebruik deze methode om uwzelf te registeren voor Self-Service Password Reset om later zelf het wachtwoord opnieuw in te kunnen stellen</P></LI>
+				<LI><P style="font-size: 12pt; font-family: Arial Narrow;">Klik op de volgende link: <A href="PWD_RESET_URL">Stel het wachtwoord opnieuw in voor het account 'PRINCIPAL_ACCOUNT_NAME' in het 'FQDN_DOMAIN' AD domein</A><BR><I>(Gebruik deze methode wanneer u uw huidige wachtwoord bent vergeten voor het 'FQDN_DOMAIN' AD domein</I></P></LI>
+			</UL>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><B>Geef nooit uw persoonlijke wachtwoord aan derden!</B></P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><B>Wij zullen nooit om uw persoonlijke wachtwoord vragen!</B></P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;"><B>U kunt NIET reageren op dit bericht!</B></P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">Bedankt!</P>
+		<P style="font-size: 12pt; font-family: Arial Narrow;">Uw Netwerk Beheerder</P>
+	</body>
+</html>
