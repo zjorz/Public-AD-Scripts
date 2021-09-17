@@ -460,25 +460,25 @@ Function createTempCanaryObject($targetedADdomainRWDCFQDN, $krbTgtSamAccountName
 
 ### FUNCTION: Confirm Generated Password Meets Complexity Requirements
 # Source: https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/password-must-meet-complexity-requirements
-Function confirmPasswordIsComplex($pwd) {
+Function confirmPasswordIsComplex($passwd) {
 	Process {
 		$criteriaMet = 0
 		
 		# Upper Case Characters (A through Z, with diacritic marks, Greek and Cyrillic characters)
-		If ($pwd -cmatch '[A-Z]') {$criteriaMet++}
+		If ($passwd -cmatch '[A-Z]') {$criteriaMet++}
 		
 		# Lower Case Characters (a through z, sharp-s, with diacritic marks, Greek and Cyrillic characters)
-		If ($pwd -cmatch '[a-z]') {$criteriaMet++}
+		If ($passwd -cmatch '[a-z]') {$criteriaMet++}
 		
 		# Numeric Characters (0 through 9)
-		If ($pwd -match '\d') {$criteriaMet++}
+		If ($passwd -match '\d') {$criteriaMet++}
 		
 		# Special Chracters (Non-alphanumeric characters, currency symbols such as the Euro or British Pound are not counted as special characters for this policy setting)
-		If ($pwd -match '[\^~!@#$%^&*_+=`|\\(){}\[\]:;"''<>,.?/]') {$criteriaMet++}
+		If ($passwd -match '[\^~!@#$%^&*_+=`|\\(){}\[\]:;"''<>,.?/]') {$criteriaMet++}
 		
 		# Check If It Matches Default Windows Complexity Requirements
 		If ($criteriaMet -lt 3) {Return $false}
-		If ($pwd.Length -lt 8) {Return $false}
+		If ($passwd.Length -lt 8) {Return $false}
 		Return $true
 	}
 }
@@ -494,7 +494,7 @@ Function generateNewComplexPassword([int]$passwordNrChars) {
 				EXIT
 			}
 			$iterations++
-			$pwdBytes = @()
+			$passwdBytes = @()
 			$rng = New-Object System.Security.Cryptography.RNGCryptoServiceProvider
 			Do {
 				[byte[]]$byte = [byte]1
@@ -502,13 +502,13 @@ Function generateNewComplexPassword([int]$passwordNrChars) {
 				If ($byte[0] -lt 33 -or $byte[0] -gt 126) {
 					CONTINUE
 				}
-                $pwdBytes += $byte[0]
+                $passwdBytes += $byte[0]
 			}
-			While ($pwdBytes.Count -lt $passwordNrChars)
-				$pwd = ([char[]]$pwdBytes) -join ''
+			While ($passwdBytes.Count -lt $passwordNrChars)
+				$passwd = ([char[]]$passwdBytes) -join ''
 			} 
-        Until (confirmPasswordIsComplex $pwd)
-        Return $pwd
+        Until (confirmPasswordIsComplex $passwd)
+        Return $passwd
 	}
 }
 
