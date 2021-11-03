@@ -3639,7 +3639,7 @@ Logging " - 'No Such Object' in the columns 'Pwd Last Set', 'Org RWDC', 'Org Tim
 Logging "     Although this is possible for any targeted object, this is most likely the case when targeting the KrbTgt TEST/BOGUS accounts and if those" "REMARK"
 Logging "     do not exist yet. This may also occur for an appliance acting as an RODC as in that case no KrbTgt TEST/BOGUS account is created." "REMARK"
 $krbTgtAADname = "krbtgt_AzureAD"
-$krbTgtAAD = Get-ADUser -Filter 'name -eq $krbTgtAADname' -SearchBase $("DC=" + $targetedADdomainFQDN.Replace(".",",DC=")) -Server $targetedADdomainNearestRWDCFQDN
+$krbTgtAAD = Get-ADUser -Filter "name -eq '$krbTgtAADname'" -SearchBase $("DC=" + $targetedADdomainFQDN.Replace(".",",DC=")) -Server $targetedADdomainNearestRWDCFQDN
 If ($krbTgtAAD) {
 	Logging "" "REMARK"
 	Logging "WARNING:" "WARNING"
