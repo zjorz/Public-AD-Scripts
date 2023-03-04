@@ -17,7 +17,7 @@ Param (
 ###
 # Version Of Script
 ###
-$version = "v3.3, 2022-12-20"
+$version = "v3.4, 2023-03-04"
 
 <#
 	AUTHOR
@@ -73,6 +73,10 @@ $version = "v3.3, 2022-12-20"
 			for DES, RC4, AES128, AES256!
 
 	RELEASE NOTES
+		v3.4, 2023-03-04, Jorge de Almeida Pinto [MVP-EMS]:
+			- Bug Fix: The PowerShell CMDlets from the ActiveDirectory module DO recognize the 2016 FFL and DFL. The script DOES NOT use those anymore, but instead uses S.DS.P.. The issue appears to be that MSFT did update the
+				ActiveDirectory module to recognize the 2016 FFL/DFl, but they apparently did not update the S.DS.P. DLLs to do the same. The script itself now detects this and reports the correct FFL/DFL when it is 2016
+
 		v3.3, 2022-12-20, Jorge de Almeida Pinto [MVP-EMS]:
 			- Bug Fix: updated the attribute type when specifying the number of the AD domain instead of the actual FQDN of the AD domain
 
@@ -5916,12 +5920,16 @@ $sortedListOfADDomainFQDNsInADForest = @()
 #$partitionsContainerDN = $thisADForest.PartitionsContainer
 $partitionsContainerDN = $($thisADForest.Schema.Name).Replace("CN=Schema", "CN=Partitions")
 
-# Retrieve The Mode/Functional Level Of The AD Forest
-$adForestMode = $thisADForest.ForestMode
+# Retrieve The Mode/Functional Level Of The AD Forest + Fix For Buf In S.DS.P.
+$targetedADforestForestFunctionalMode = $thisADForest.ForestMode
+$targetedADforestForestFunctionalModeLevel = $thisADForest.ForestModeLevel
+If ([int]$targetedADforestForestFunctionalModeLevel -eq 7 -And $targetedADforestForestFunctionalMode -eq "Unknown") {
+	$targetedADforestForestFunctionalMode = "Windows2016Forest"
+}
 
 # Define An Empty List/Table That Will Contain All AD Domains In The AD Forest And Related Information
 $tableOfADDomainsInADForest = @()
-Logging "Forest Mode/Level...: $adForestMode"
+Logging "Forest Mode/Level...: $targetedADforestForestFunctionalMode"
 
 # Set The Counter To Zero
 $nrOfDomainsInForest = 0
@@ -5970,14 +5978,14 @@ $sortedListOfADDomainFQDNsInADForest | ForEach-Object {
 		$domainObj = $null
 	}
 
-	# Populate The Table With Data From The Processed AD Domain
+	# Populate The Table With Data From The Processed AD Domain + Bug Fix For DomainMode(Level) In S.DS.P. When FFL/DFL Is 2016
 	$tableOfADDomainsInADForestObj = New-Object -TypeName System.Object
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "ListNr" -Value $nrOfDomainsInForest
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "Name" -Value $domainFQDN
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "NetBIOS" -Value $(If ($domainObj) {$domainObj.GetDirectoryEntry().Properties["Name"].Value} Else {"AD Domain Is Not Available"})
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "DomainSID" -Value $(If ($domainObj) {$objectSidBytes = $domainObj.GetDirectoryEntry().Properties["objectSid"].Value; (New-Object System.Security.Principal.SecurityIdentifier($objectSidBytes, 0)).Value} Else {"AD Domain Is Not Available"})
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "IsRootDomain" -Value $(If ($rootADDomainInADForest -eq $domainFQDN) {$true} Else {$false})
-	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "DomainMode" -Value $(If ($domainObj) {$domainObj.DomainMode} Else {"AD Domain Is Not Available"})
+	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "DomainMode" -Value $(If ($domainObj) {If ([int]$($domainObj.DomainModeLevel) -eq 7 -And $($domainObj.DomainMode) -eq "Unknown") {"Windows2016Domain"} Else {$($domainObj.DomainMode)}} Else {"AD Domain Is Not Available"})
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "IsCurrentDomain" -Value $(If ($fqdnADDomainOfComputer -eq $domainFQDN) {$true} Else {$false})
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "IsAvailable" -Value $(If ($domainObj) {$true} Else {$false})
 	$tableOfADDomainsInADForestObj | Add-Member -MemberType NoteProperty -Name "PDCFsmoOwner" -Value $(If ($domainObj) {$domainObj.PdcRoleOwner.Name} Else {"AD Domain Is Not Available"})
@@ -6339,6 +6347,9 @@ If ($thisADDomain) {
 			Logging "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" "ERROR"
 			Logging "" "ERROR"
 		}
+	}
+	If ($targetedADdomainDomainFunctionalModeLevel -eq 7 -And $targetedADdomainDomainFunctionalMode -eq "Unknown") {
+		$targetedADdomainDomainFunctionalMode = "Windows2016Domain"
 	}
 
 	Try {
