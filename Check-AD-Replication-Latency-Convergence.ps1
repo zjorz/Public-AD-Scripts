@@ -92,10 +92,12 @@ $version = "v0.5, 2024-01-28"
 		- Domain NCs with domain and GCs scope to test AD replication convergence/latency across the AD domain and the GCs in other AD domains
 		- App NCs to test AD replication convergence/latency across the application partition
 	- As the source RWDC, it is possible to:
-		- Use the FSMO
+		- Use the FSMO of the naming context
 			- For the Configuration Partition  => FSMO = RWDC with Domain Naming Master FSMO Role (Partitions (Container) Object, Attribute fSMORoleOwner has NTDS Settings Object DN of RWDC)
 			- For the Domain Partition         => FSMO = RWDC with PDC Emulator FSMO Role (Domain NC Object, Attribute fSMORoleOwner Has NTDS Settings Object DN of RWDC)
 			- For the Application Partition    => FSMO = RWDC with Infrastructure Master FSMO Role (Infrastructure Object, Attribute fSMORoleOwner has NTDS Settings Object DN of RWDC)
+		- Use a discovered RWDC (best effort, especially with application partitions)
+		- Specified the FQDN of a RWDC that hosts the naming context
 	- For the temporary canary object:
 		- Initially created on the source RWDC and deleted from the source RWDC at the end
 		- ObjectClass     = contact
