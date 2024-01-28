@@ -2,15 +2,15 @@
 
 ## AUTHOR
 
-* Written By....................: Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]
-* Re-Written By.................: N.A.
-* Company.......................: IAMTEC >> Identity | Security | Recovery [https://www.iamtec.eu/]
-* Blog..........................: Jorge's Quest For Knowledge [http://jorgequestforknowledge.wordpress.com/]
-* For Feedback/Questions........: <scripts.gallery@iamtec.eu>
-   --> Please Describe Your Scenario As Best As Possible With As Much Detail As Possible.
-   --> If Applicable Describe What Does and/Or Does Not Work.
-   --> If Applicable Describe What Should Be/Work Different And Explain Why/How.
-   --> Please Add Screendumps.
+* Written By: Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]
+* Re-Written By: N.A.
+* Company: IAMTEC &gt;&gt; Identity | Security | Recovery [https://www.iamtec.eu/]
+* Blog: Jorge's Quest For Knowledge [http://jorgequestforknowledge.wordpress.com/]
+* For Feedback/Questions: scripts DOT gallery AT iamtec.eu
+  * Please Describe Your Scenario As Best As Possible With As Much Detail As Possible.
+  * If Applicable Describe What Does and/Or Does Not Work.
+  * If Applicable Describe What Should Be/Work Different And Explain Why/How.
+  * Please Add Screendumps.
 
 ## ORIGINAL SOURCE(S)
 
@@ -75,24 +75,24 @@ This PoSH script provides the following functions:
   * App NCs to test AD replication convergence/latency across the application partition
 * As the source RWDC, it is possible to:
   * Use the FSMO
-    * For the Configuration Partition  => FSMO = RWDC with Domain Naming Master FSMO Role (Partitions (Container) Object, Attribute fSMORoleOwner has NTDS Settings Object DN of RWDC)
-    * For the Domain Partition         => FSMO = RWDC with PDC Emulator FSMO Role (Domain NC Object, Attribute fSMORoleOwner Has NTDS Settings Object DN of RWDC)
-    * For the Application Partition    => FSMO = RWDC with Infrastructure Master FSMO Role (Infrastructure Object, Attribute fSMORoleOwner has NTDS Settings Object DN of RWDC)
+    * For the Configuration Partition  =&gt; FSMO = RWDC with Domain Naming Master FSMO Role (Partitions (Container) Object, Attribute fSMORoleOwner has NTDS Settings Object DN of RWDC)
+    * For the Domain Partition         =&gt; FSMO = RWDC with PDC Emulator FSMO Role (Domain NC Object, Attribute fSMORoleOwner Has NTDS Settings Object DN of RWDC)
+    * For the Application Partition    =&gt; FSMO = RWDC with Infrastructure Master FSMO Role (Infrastructure Object, Attribute fSMORoleOwner has NTDS Settings Object DN of RWDC)
   * Use a discovered RWDC (best effort, especially with application partitions)
   * Specified the FQDN of a RWDC that hosts the naming context
 * For the temporary canary object:
   * Initially created on the source RWDC and deleted from the source RWDC at the end
   * ObjectClass     = contact
   * Name            = _adReplConvergenceCheckTempObject_yyyyMMddHHmmss (e.g. _adReplConvergenceCheckTempObject_20240102030405)
-  * Description     = ...!!!...TEMP OBJECT TO TEST AD REPLICATION LATENCY/CONVERGENCE THROUGH THE '<NC TYPE>'...!!!...
+  * Description     = ...!!!...TEMP OBJECT TO TEST AD REPLICATION LATENCY/CONVERGENCE THROUGH THE '&lt;NC TYPE&gt;'...!!!...
   * Container:
-    * For the Configuration Partition  => Container = "CN=Services,CN=Configuration,DC=<ROOT DOMAIN>,DC=<TLD>"
-    * For the Domain Partition         => Container = "CN=Users,DC=<DOMAIN>,DC=<TLD>"
-    * For the Application Partition    => Container = "<DN Of App Partition, e.g. DC=CustomAppNC OR DC=DomainDnsZones,DC=<DOMAIN>,DC=<TLD>"
+    * For the Configuration Partition  =&gt; Container = "CN=Services,CN=Configuration,DC=&lt;ROOT DOMAIN&gt;,DC=&lt;TLD&gt;"
+    * For the Domain Partition         =&gt; Container = "CN=Users,DC=&lt;DOMAIN&gt;,DC=&lt;TLD&gt;"
+    * For the Application Partition    =&gt; Container = "&lt;DN Of App Partition, e.g. DC=CustomAppNC OR DC=DomainDnsZones,DC=&lt;DOMAIN&gt;,DC=&lt;TLD&gt;"
   * Distinguished Name
-    * For the Configuration Partition  => DN = "CN=_adReplConvergenceCheckTempObject_yyyyMMddHHmmss,CN=Services,CN=Configuration,DC=<ROOT DOMAIN>,DC=<TLD>"
-    * For the Domain Partition         => DN = "CN=_adReplConvergenceCheckTempObject_yyyyMMddHHmmss,CN=Users,DC=<DOMAIN>,DC=<TLD>"
-    * For the Application Partition    => DN = "CN=_adReplConvergenceCheckTempObject_yyyyMMddHHmmss,<DN Of App Partition, e.g. DC=CustomAppNC OR DC=DomainDnsZones,DC=<DOMAIN>,DC=<TLD>"
+    * For the Configuration Partition  =&gt; DN = "CN=_adReplConvergenceCheckTempObject_yyyyMMddHHmmss,CN=Services,CN=Configuration,DC=&lt;ROOT DOMAIN&gt;,DC=&lt;TLD&gt;"
+    * For the Domain Partition         =&gt; DN = "CN=_adReplConvergenceCheckTempObject_yyyyMMddHHmmss,CN=Users,DC=&lt;DOMAIN&gt;,DC=&lt;TLD&gt;"
+    * For the Application Partition    =&gt; DN = "CN=_adReplConvergenceCheckTempObject_yyyyMMddHHmmss,&lt;DN Of App Partition, e.g. DC=CustomAppNC OR DC=DomainDnsZones,DC=&lt;DOMAIN&gt;,DC=&lt;TLD&gt;"
 * All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors
 * It checks if specified NC exists. If not, the script aborts.
 * It checks if specified RWDC exists. If not, the script aborts.
