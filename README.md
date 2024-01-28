@@ -2,4 +2,10 @@
 
 AD Scripts
 
- [SCRIPT: Check-AD-Replication-Latency-Convergence](Check-AD-Replication-Latency-Convergence.md){:target="_blank" rel="noopener"}
+REMARK: To Open Links In Another TAB
+
+* On Windows: Press CTRL + Click The Link
+* On Windows: Press CTRL + Click The Link
+* On MacOS: Press CMD + Click The Link
+
+ [SCRIPT: Check-AD-Replication-Latency-Convergence](Check-AD-Replication-Latency-Convergence.md)
