@@ -2,4 +2,4 @@
 
 AD Scripts
 
- [SCRIPT: Check-AD-Replication-Latency-Convergence](Check-AD-Replication-Latency-Convergence.md){:target="_blank"}
+ [SCRIPT: Check-AD-Replication-Latency-Convergence](Check-AD-Replication-Latency-Convergence.md){:target="_blank" rel="noopener"}
