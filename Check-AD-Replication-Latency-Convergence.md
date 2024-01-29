@@ -96,6 +96,7 @@ This PoSH script provides the following functions:
 * All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors
 * It checks if specified NC exists. If not, the script aborts.
 * It checks if specified RWDC exists. If not, the script aborts.
+* The script DOES NOT allow or support the schema partition to be targeted!
 
 ## PARAMETER(S)
 

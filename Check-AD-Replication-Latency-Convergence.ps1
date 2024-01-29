@@ -155,6 +155,7 @@ $version = "v0.5, 2024-01-28"
 		in general allows the usage of the script against any naming context
 	- The credentials used are the credentials of the logged on account. It is not possible to provided other credentials. Other credentials could maybe be used through RUNAS /NETONLY /USER
 	- No check is done for the required permissions		
+	- The script DOES NOT allow or support the schema partition to be targeted!
 #>
 
 ###
@@ -517,6 +518,17 @@ If ([String]::IsNullOrEmpty($targetNCDN)) {
 		$ncNumericSelection = $defaultNCSpecificNumericOption
 	}
 } Else {
+	If ($targetNCDN -eq $schemaNCDN) {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "The Specified Naming Context '$schemaNCDN' IS NOT ALLOWED To Be Used With This Script And Also NOT Supported!" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "To Check The Replication Convergence/Latency Throughout The AD Forest, Please Re-Run The Script And Use The Naming Context '$configNCDN' Instead!" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		
+		BREAK
+	}
 	$ncNumericSelection = ($($tableOfNCsInADForest | Sort-Object -Property "NC Type" -Descending)."NC DN").IndexOf($targetNCDN) + 1
 	If ($ncNumericSelection -eq 0) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
