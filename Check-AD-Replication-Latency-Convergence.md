@@ -1,6 +1,6 @@
 # SCRIPT: Check-AD-Replication-Latency-Convergence
 
-## AUTHOR
+## AUTHOR/FEEDBACK
 
 * Written By: Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]
 * Re-Written By: N.A.
@@ -151,3 +151,29 @@ Check The AD Replication Convergence/Latency Using Automated Mode For The NC "DC
 * No check is done for the required permissions
 
 ## SCREENSHOTS
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture01.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture02.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture03.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture04.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture05.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture06.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture07.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture08.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture09.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture10.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture11.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture12.png "Check-AD-Replication-Latency-Convergence")
+
+![Alt](Images/Check-AD-Replication-Latency-Convergence_Picture13.png "Check-AD-Replication-Latency-Convergence")
