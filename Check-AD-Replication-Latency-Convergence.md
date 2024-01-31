@@ -35,6 +35,9 @@
 
 ## RELEASE NOTES
 
+* v0.6, 2024-01-31, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+  * Code Improvement: Added additional information, minor changes
+
 * v0.5, 2024-01-28, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 
   * Script Improvement: Complete rewrite of the script
@@ -96,6 +99,7 @@ This PoSH script provides the following functions:
 * All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors
 * It checks if specified NC exists. If not, the script aborts.
 * It checks if specified RWDC exists. If not, the script aborts.
+* Disjoint namespaces and discontiguous namespaces are supported
 * The script DOES NOT allow or support the schema partition to be targeted!
 
 ## PARAMETER(S)
