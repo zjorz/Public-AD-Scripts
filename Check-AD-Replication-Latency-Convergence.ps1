@@ -118,6 +118,7 @@ $version = "v0.6, 2024-01-31"
 	- It checks if specified NC exists. If not, the script aborts.
 	- It checks if specified RWDC exists. If not, the script aborts.
 	- Disjoint namespaces and discontiguous namespaces are supported
+	- The script DOES NOT allow or support the schema partition to be targeted!
 
 .PARAMETER targetNCDN
 	With this parameter it is possible to specify the DN of a naming Context to target for AD Replication Convergence/Latency check
