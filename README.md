@@ -9,3 +9,5 @@ REMARK: To Open Links In Another TAB
 * On MacOS: Press CMD + Click The Link
 
  [SCRIPT: Check-AD-Replication-Latency-Convergence](Check-AD-Replication-Latency-Convergence.md)
+
+ [SCRIPT: Check-SYSVOL-And-DFSR-And-NTFRS-Folders-Replication-Latency-Convergence](Check-SYSVOL-And-DFSR-And-NTFRS-Folders-Replication-Latency-Convergence.md)
