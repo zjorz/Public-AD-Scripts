@@ -8,7 +8,7 @@ Param (
 	[Parameter(Mandatory=$False)]
 	[ValidateSet("DomainAndGCs","DomainOnly")]
 	[string]$targetedReplScope,
-	
+
 	[Parameter(Mandatory=$False)]
 	[ValidatePattern("^(Fsmo|Discover|(?!.*?_.*?)(?!(?:[\w]+?\.)?\-[\w\.\-]*?)(?![\w]+?\-\.(?:[\w\.\-]+?))(?=[\w])(?=[\w\.\-]*?\.+[\w\.\-]*?)(?![\w\.\-]{254})(?!(?:\.?[\w\-\.]*?[\w\-]{64,}\.)+?)[\w\.\-]+?(?<![\w\-\.]*?\.[\d]+?)(?<=[\w\-]{2,})(?<![\w\-]{25}))$")]
 	[string]$targetRWDC
@@ -17,7 +17,7 @@ Param (
 ###
 # Version Of Script
 ###
-$version = "v0.5, 2024-01-28"
+$version = "v0.6, 2024-01-31"
 
 <#
 	AUTHOR
@@ -53,14 +53,17 @@ $version = "v0.5, 2024-01-28"
 		- N.A.
 
 	RELEASE NOTES
-		v0.5, 2024-01-28, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:	
+		v0.6, 2024-01-31, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+			- Code Improvement: Added additional information, minor changes
+
+		v0.5, 2024-01-28, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- Script Improvement: Complete rewrite of the script
 			- New Feature: Parameters added to support automation
 			- New Feature: Logging Function
 			- New Feature: Support for all NCs (Configuration Partition As The Forest NC, Domain NCs With Domain Only Or Also Including GCs In Other AD Domains, And App NCs)
 			- Code Improvement: As target RWDC use specific role owner, disccovered RWDC, specific RWDC
-	
-		v0.4, 2014-02-11, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:		
+
+		v0.4, 2014-02-11, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- Code Improvement: Added additional logic to determine if a DC is either an RWDC or RODC when it fails using the first logic and changed the layout a little bit
 
 		v0.3, 2014-02-09, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
@@ -68,7 +71,7 @@ $version = "v0.5, 2024-01-28"
 
 		v0.2, 2014-02-01, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- New Feature: Added STOP option
-			- Added few extra columns to output extra info of DCs,
+			- Code Improvement: Added few extra columns to output extra info of DCs,
 			- Code Improvement: Better detection of unavailable DCs/GCs
 			- Added screen adjustment section
 
@@ -114,6 +117,7 @@ $version = "v0.5, 2024-01-28"
 	- All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors
 	- It checks if specified NC exists. If not, the script aborts.
 	- It checks if specified RWDC exists. If not, the script aborts.
+	- Disjoint namespaces and discontiguous namespaces are supported
 
 .PARAMETER targetNCDN
 	With this parameter it is possible to specify the DN of a naming Context to target for AD Replication Convergence/Latency check
@@ -123,7 +127,7 @@ $version = "v0.5, 2024-01-28"
 	With this parameter it is possible to specify the replication scope when targeting a domain NC, being "Domain Only" (DomainOnly) or "Domain And GCs" (DomainAndGCs)
 
 .PARAMETER targetRWDC
-	With this parameter it is possible to specify the RWDC to use to create the temporary cabary object on. Options that are available for this are "Fsmo", "Discover" or the FQDN of an RWDC
+	With this parameter it is possible to specify the RWDC to use to create the temporary canary object on. Options that are available for this are "Fsmo", "Discover" or the FQDN of an RWDC
 
 .EXAMPLE
 	Check The AD Replication Convergence/Latency Using Interactive Mode
@@ -154,8 +158,9 @@ $version = "v0.5, 2024-01-28"
 	- To execute this script, the account running the script MUST have the permissions to create and delete the object type in the container used of the specified naming context. Being a member of the Enterprise Admins group
 		in general allows the usage of the script against any naming context
 	- The credentials used are the credentials of the logged on account. It is not possible to provided other credentials. Other credentials could maybe be used through RUNAS /NETONLY /USER
-	- No check is done for the required permissions		
+	- No check is done for the required permissions
 	- The script DOES NOT allow or support the schema partition to be targeted!
+	- No PowerShell modules are needed to use this script
 #>
 
 ###
@@ -298,7 +303,7 @@ Function convertNTDSSettingsObjectDNToFQDN {
 		$rwdcFQDN,
 		$ntdsSettingsObjectDN
 	)
-	
+
 	$serverObjectDN = $ntdsSettingsObjectDN.Replace("CN=NTDS Settings,","")
 
 	Try {
@@ -526,7 +531,7 @@ If ([String]::IsNullOrEmpty($targetNCDN)) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		
+
 		BREAK
 	}
 	$ncNumericSelection = ($($tableOfNCsInADForest | Sort-Object -Property "NC Type" -Descending)."NC DN").IndexOf($targetNCDN) + 1
@@ -538,12 +543,12 @@ If ([String]::IsNullOrEmpty($targetNCDN)) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		
+
 		BREAK
 	}
 }
 $ncOptionChosen = $($tableOfNCsInADForest | Sort-Object -Property "NC Type" -Descending)[$ncNumericSelection - 1]
-writeLog -dataToLog " > Option Chosen: [$ncNumericSelection] $($ncOptionChosen.'NC DN') | Name/FQDN: $($ncOptionChosen.'Name/FQDN') | NC Type: $($ncOptionChosen.'NC Type')" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog " > Option Chosen: [$ncNumericSelection] NC DN: $($ncOptionChosen.'NC DN') | Name/FQDN: $($ncOptionChosen.'Name/FQDN') | NC Type: $($ncOptionChosen.'NC Type')" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 
 ###
@@ -618,11 +623,11 @@ $ntdsDsaObjects | ForEach-Object {
 	$dcName = $ntdsSettingsDN.Substring(("CN=NTDS Settings,CN=").Length)
 	$dcName = $dcName.Substring(0,$dcName.IndexOf(","))
 	$dcFQDN = convertNTDSSettingsObjectDNToFQDN -rwdcFQDN $rwdcFQDN -ntdsSettingsObjectDN $ntdsSettingsDN
-	$dcIPv4 = Try {[System.Net.Dns]::GetHostAddresses($dcFQDN).IPAddressToString} Catch {"<Failed To Resolve>"}
+	$dcIPv4 = Try {([System.Net.Dns]::GetHostEntry($dcFQDN).AddressList | Where-Object{$_.AddressFamily -eq "InterNetwork"}).IPAddressToString} Catch {"<UNKNOWN>"}
 	$dcSite = $ntdsSettingsDN.Substring(("CN=NTDS Settings,CN=$dcName,CN=Servers,CN=").Length)
 	$dcSite = $dcSite.Substring(0,$dcSite.IndexOf(","))
 	$dcDomainNC = $_.Properties."msds-hasdomainncs"[0]
-	$dcType = $(If ($_.Properties."msds-isrodc"[0] -eq $true) {"RODC"} ElseIf ($_.Properties."msds-isrodc"[0] -eq $false) {"RWDC"} Else {"<Unknown>"})
+	$dcType = $(If ($_.Properties."msds-isrodc"[0] -eq $true) {"RODC"} ElseIf ($_.Properties."msds-isrodc"[0] -eq $false) {"RWDC"} Else {"<UNKNOWN>"})
 	$dcIsGC = $_.Properties."msds-isgc"[0]
 	If ($ncOptionChosen."NC Type" -eq "App NC" -And $dcType -eq "RWDC") {
 		$hostedAppNCs = $_.Properties."msds-hasmasterncs" | Where-Object {$_ -ne $schemaNCDN -And $_ -ne $configNCDN -And $_ -ne $dcDomainNC}
@@ -637,7 +642,7 @@ $ntdsDsaObjects | ForEach-Object {
 	$tableOfDCsInADForestEntry | Add-Member -MemberType NoteProperty -Name "Root" -Value $(If ($dcDomainNC -eq $("DC=" + $adForestRootDomainObject.Name.Replace(".",",DC="))) {$true} Else {$false})
 	$tableOfDCsInADForestEntry | Add-Member -MemberType NoteProperty -Name "Is GC" -Value $dcIsGC
 	If ($ncOptionChosen."NC Type" -eq "App NC") {
-		$tableOfDCsInADForestEntry | Add-Member -MemberType NoteProperty -Name "App NCs" -Value $(If ($dcType -eq "RWDC") {$hostedAppNCs} Else {$($appNCObjects | Where-Object {$_.Properties."msds-nc-ro-replica-locations" -contains "CN=NTDS Settings,CN=R1FSRODC1,CN=Servers,CN=BRANCH01,CN=Sites,CN=Configuration,DC=IAMTEC,DC=NET"} | ForEach-Object {$_.Properties.ncname})})
+		$tableOfDCsInADForestEntry | Add-Member -MemberType NoteProperty -Name "App NCs" -Value $(If ($dcType -eq "RWDC") {$hostedAppNCs} Else {$($appNCObjects | Where-Object {$_.Properties."msds-nc-ro-replica-locations" -contains $ntdsSettingsDN} | ForEach-Object {$_.Properties.ncname})})
 	}
 	$tableOfDCsInADForest += $tableOfDCsInADForestEntry
 }
@@ -677,7 +682,7 @@ If ($ncOptionChosen."NC Type" -eq "Forest NC") {
 		$fsmoRoleOwnerFQDN = "UNDEFINED / INVALID"
 	} Else {
 		$fsmoRoleOwnerFQDN = convertNTDSSettingsObjectDNToFQDN -rwdcFQDN $rwdcFQDN -ntdsSettingsObjectDN $ntdsSettingsObjectFsmoRoleOwnerDN
-	}	
+	}
 }
 If ($ncOptionChosen."NC Type" -eq "Domain NC") {
 	If ($domainNCReplicationScopeOptionChosen -eq "Domain And All GCs") {
@@ -870,7 +875,7 @@ If ($(($ncOptionChosen."NC Type" -eq "Forest NC" -Or $ncOptionChosen."NC Type" -
 	writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "Continuing Script..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
-	
+
 	($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -eq $sourceRWDCFQDN})."Source" = $true
 	($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -ne $sourceRWDCFQDN}) | ForEach-Object {$_."Source" = $false}
 	($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -eq $sourceRWDCFQDN})."DC FQDN" = "$($sourceRWDCFQDN + " [SOURCE RWDC]")"
@@ -887,7 +892,7 @@ If ($(($ncOptionChosen."NC Type" -eq "Forest NC" -Or $ncOptionChosen."NC Type" -
 	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	
+
 	BREAK
 }
 
@@ -935,6 +940,7 @@ $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Dom
 $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Root" -Value $(($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -match $sourceRWDCFQDN})."Root")
 $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Is GC" -Value $(($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -match $sourceRWDCFQDN})."Is GC")
 $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $(($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -match $sourceRWDCFQDN})."Reachable")
+$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $(($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -match $sourceRWDCFQDN})."Source")
 $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$('{0:N2}' -f "0.00"))
 $resultsTableOfProcessedDCs += $resultsTableOfProcessedDCEntry
 
@@ -958,17 +964,19 @@ While($continue) {
 	writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 	Start-Sleep 1
     $replicated = $true
-	
+
 	# For Each Domain Controller In The List/Table With DCs To Process '$tableOfDCsToProcess' Perform A Number Of Steps
     ForEach ($ntDsa in $tableOfDCsToProcess) {
+		# Only For The Domain Controller Used As The Source RWDC
 		If ($ntDsa."DC FQDN" -match $sourceRWDCFQDN) {
 			writeLog -dataToLog "  * Contacting DC For Naming Context '$($ncOptionChosen."NC DN")' ...[$($ntDsa."DC FQDN".ToUpper())]..." -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "     - DC Is Reachable..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "     - Object [$tempCanaryObjectDN] Exists In The Database" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
-			continue
+
+			CONTINUE
 		}
 
-		# If The Domain Controller Hosts The Forest NC, Or Hosts The Domain NC And Is Part Of The Domain NC, Or Hosts The App NC, Then Connect Through LDAP (TCP:389)
+		# If The Other Domain Controller Hosts The Forest NC, Or Hosts The Domain NC And Is Part Of The Domain NC, Or Hosts The App NC, Then Connect Through LDAP (TCP:389)
         If ($ncOptionChosen."NC Type" -eq "Forest NC" -Or ($ncOptionChosen."NC Type" -eq "Domain NC" -And $domainNCReplicationScopeOptionChosen -eq "Domain Only") -Or ($ncOptionChosen."NC Type" -eq "Domain NC" -And $domainNCReplicationScopeOptionChosen -eq "Domain And All GCs" -And $ntDsa."Domain NC" -eq $($ncOptionChosen."NC DN")) -Or $ncOptionChosen."NC Type" -eq "App NC") {
 			writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "  * Contacting DC For Naming Context '$($ncOptionChosen."NC DN")' ...[$($ntDsa."DC FQDN".ToUpper())]..." -logFileOnly $false -noDateTimeInLogLine $false
@@ -977,13 +985,13 @@ While($continue) {
 				writeLog -dataToLog "     - DC Is Reachable..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 				$objectPath = [ADSI]"LDAP://$($ntDsa."DC FQDN")/$tempCanaryObjectDN"
 				$connectionResult = "SUCCESS"
-			}			
+			}
 			If ($ntDsa.Reachable -eq $false) {
 				writeLog -dataToLog "     - DC IS NOT Reachable..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				$connectionResult = "FAILURE"
-			}			
+			}
 		}
-		
+
 		# If The Domain Controller Hosts The Domain NC And Is NOT Part Of The Domain NC, Then Connect Through LDAP-GC (TCP:3268)
         If ($ncOptionChosen."NC Type" -eq "Domain NC" -And $domainNCReplicationScopeOptionChosen -eq "Domain And All GCs" -And $ntDsa."Domain NC" -ne $($ncOptionChosen."NC DN")) {
 			writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
@@ -993,16 +1001,16 @@ While($continue) {
 				writeLog -dataToLog "     - DC/GC Is Reachable..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 				$objectPath = [ADSI]"GC://$($ntDsa."DC FQDN")/$tempCanaryObjectDN"
 				$connectionResult = "SUCCESS"
-			}			
+			}
 			If ($ntDsa.Reachable -eq $false) {
 				writeLog -dataToLog "     - DC/GC IS NOT Reachable..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				$connectionResult = "FAILURE"
 			}
 		}
-        
+
 		# If The Connection To The DC Is Successful
 		If ($connectionResult -eq "SUCCESS") {
-			If ($objectPath.name) { # If The Temp Canary Object Already Exists Populated The Results Table
+			If ($objectPath.name) { # If The Temporary Canary Object Already Exists Populated The Results Table
 				writeLog -dataToLog "     - Object [$tempCanaryObjectDN] Now Does Exist In The Database                               " -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 				If ([string]::IsNullOrEmpty($($resultsTableOfProcessedDCs | Where-Object {$_."DC FQDN" -match $ntDsa."DC FQDN"}))) {
 					$resultsTableOfProcessedDCEntry = New-Object -TypeName System.Object
@@ -1014,15 +1022,16 @@ While($continue) {
 					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Root" -Value $($ntDsa."Root")
 					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Is GC" -Value $($ntDsa."Is GC")
 					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $($ntDsa."Reachable")
+					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($ntDsa."Source")
 					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$("{0:n2}" -f ((Get-Date) - $startDateTime).TotalSeconds))
 					$resultsTableOfProcessedDCs += $resultsTableOfProcessedDCEntry
 				}
-			} Else { # If The Temp Canary Object Does Not Yet Exist
+			} Else { # If The Temporary Canary Object Does Not Yet Exist
 				writeLog -dataToLog "     - Object [$tempCanaryObjectDN] Does NOT Exist (Yet) In The Database" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				$replicated  = $false
 			}
 		}
-		
+
 		# If The Connection To The DC Is Unsuccessful
 		If ($connectionResult -eq "FAILURE") {
 			writeLog -dataToLog "     - Unable To Connect To DC/GC And Check For The Temporary Canary Object..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -1036,7 +1045,8 @@ While($continue) {
 				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Root" -Value $($ntDsa."Root")
 				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Is GC" -Value $($ntDsa."Is GC")
 				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $($ntDsa."Reachable")
-				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([string]"<FAIL>")
+				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($ntDsa."Source")
+				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([string]"<$connectionResult>")
 				$resultsTableOfProcessedDCs += $resultsTableOfProcessedDCEntry
 			}
 		}
@@ -1060,13 +1070,13 @@ writeLog -dataToLog "  Duration........: $duration Seconds" -logFileOnly $false 
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 
 ###
-# Delete The Temp Canary Object On The Source RWDC, Which Will Replicate To The Other DCs/GCs
+# Delete The Temporary Canary Object On The Source RWDC, Which Will Replicate To The Other DCs/GCs
 ###
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "  Deleting Temporary Canary Object... " -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 ([ADSI]"LDAP://$sourceRWDCFQDN/$container").Delete("contact","CN=$tempCanaryObjectName")
-writeLog -dataToLog "  Temp Canary Object [$tempCanaryObjectDN] Has Been Deleted On The Source RWDC!" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "  Temporary Canary Object [$tempCanaryObjectDN] Has Been Deleted On The Source RWDC!" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 
 ###
