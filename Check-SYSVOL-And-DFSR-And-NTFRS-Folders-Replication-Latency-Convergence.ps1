@@ -19,7 +19,7 @@ Param (
 ###
 # Version Of Script
 ###
-$version = "v0.5, 2024-01-31"
+$version = "v0.6, 2024-02-06"
 
 <#
 	AUTHOR
@@ -55,6 +55,16 @@ $version = "v0.5, 2024-01-31"
 		- N.A.
 
 	RELEASE NOTES
+		v0.6, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+			- Code Improvement: Changed the function "getDFSRReplGroupMembers" to not use a GC, but instead use a RWDC from the respective AD domain of the object that is being looked for
+			- Code Improvement: When discovering a member, added a check to choose a member with a writable copy of the replicated folder
+			- Improved User Experience: Added a check to determine if there are Temporary Canary Object leftovers from previous executions of the script that were not cleaned up because the script was aborted or it crashed
+			- Improved User Experience: Changed the timing column from "Time" to "TimeDiscvrd" (Time Discovered) which specifies how much time it took to find/see the file on the member of the replicated folder
+			- Improved User Experience: The AD domain list presented is now consistently presented in the same order
+			- Bug Fix: Fixed the unc path for the folder when SYSVOL is still using NTFRS. Temporary Canary File is now created in the Scripts folder (SYSVOL only!)
+			- Bug Fix: When not using SYSVOL as replicated folder, fixed the Member to target for checking the existence of the Temporary Canary File
+			- Bug Fix: Changed the variable name of the unc path for the folder on the source from $uncPathFolder to $uncPathFolderSource, to also target the correct (source) Member for cleanup of the file
+
 		v0.5, 2024-01-31, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- Script Improvement: Complete rewrite of the script
 			- New Feature: Parameters added to support automation
@@ -82,19 +92,19 @@ $version = "v0.5, 2024-01-31"
 
 <#
 .SYNOPSIS
-	This PoSH Script Checks The File Replication Latency/Convergence For Replicated Folders (SYSVOL And Custom) Using Either NTFRS Or DFSR
+	This PoSH Script Checks The File Replication Latency/Convergence For Replicated Folders (SYSVOL And Custom) Using Either NTFRS Or DFSR.
 
 .DESCRIPTION
-    This PoSH Script Checks The File Replication Latency/Convergence For Replicated Folders (SYSVOL And Custom) Using Either NTFRS Or DFSR
+    This PoSH Script Checks The File Replication Latency/Convergence For Replicated Folders (SYSVOL And Custom) Using Either NTFRS Or DFSR.
 	This PoSH script provides the following functions:
-	- It executes on a per replicated folder basis. For multiple replicated folder use automation with parameters
-	- For automation, it is possible to define the FQDN of the AD Domain to target, the name of the replica set (NTFRS) or the name of the replicated folder (DFSR) within that AD domain, and the member to use as the source member to create the temoporary canary file on
-	- It supports non-interacive mode through automation with parameters, or interactive mode
+	- It executes on a per replicated folder basis. For multiple replicated folder use automation with parameters.
+	- For automation, it is possible to define the FQDN of the AD Domain to target, the name of the replica set (NTFRS) or the name of the replicated folder (DFSR) within that AD domain, and the member to use as the source member to create the temoporary canary file on.
+	- It supports non-interacive mode through automation with parameters, or interactive mode.
 	- It supports file replication convergence check for any replica set (NTFRS) or replicated folder (DFSR) within an AD forest.
 	- As the source member, it is possible to:
-		- Use the FSMO of the AD Domain, when it concerns the SYSVOL only
-		- Use a discovered member (best effort)
-		- Specify the FQDN of a member that hosts the replica set (NTFRS) or the replicated folder (DFSR)
+		- Use the FSMO of the AD Domain, when it concerns the SYSVOL only.
+		- Use a discovered member (best effort).
+		- Specify the FQDN of a member that hosts the replica set (NTFRS) or the replicated folder (DFSR).
 	- For the temporary canary file:
 		- Initially created on the source member and deleted from the source member at the end
 		- Name            = _fileReplConvergenceCheckTempFile_yyyyMMddHHmmss (e.g. _fileReplConvergenceCheckTempFile_20240102030405)
@@ -102,11 +112,12 @@ $version = "v0.5, 2024-01-31"
 		- Folder:
 			- For custom replicated folders    => Folder = At the root of the folder
 			- For SYSVOL                       => Folder = "<SYSVOL LOCAL PATH>\Scripts"
-	- All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors
+	- All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors.
 	- It checks if specified replica set (NTFRS) or replicated folder (DFSR) exists. If not, the script aborts.
 	- It checks if specified member exists. If not, the script aborts.
-	- Disjoint namespaces and discontiguous namespaces are supported
-	- During interactive mode, after specifying the source member, it will count the files in the replicated folder on every member by default. This can be disabled through a parameter
+	- At the end it checks if any Temporary Canary Files exist from previous execution of the script and offers to clean up (In the chosen Replicated Folder only!).
+	- Disjoint namespaces and discontiguous namespaces are supported.
+	- During interactive mode, after specifying the source member, it will count the files in the replicated folder on every member by default. This can be disabled through a parameter.
 
 .PARAMETER skipFileCount
 	With this parameter it is possible not count files in the replicated folder on every member
@@ -179,7 +190,7 @@ $version = "v0.5, 2024-01-31"
 	- For the SYSVOL, it only works correctly when either using NTFRS, or DFSR in a completed state!
 	- Admin shares must be enabled
 	- For File Count, WinRM must be possible against the remote machines
-	- Yes, I'm aware,, there is duplicate code to support both NTFRS and DFSR. This was the easiest way to support both without too much complexity. It also allows to remove it easily when NTFRS cannot be used anymore
+	- Yes, I'm aware, there is duplicate code to support both NTFRS and DFSR. This was the easiest way to support both without too much complexity. It also allows to remove it easily when NTFRS cannot be used anymore
 #>
 
 ###
@@ -383,8 +394,8 @@ Function getDFSRReplGroupMembers {
 	Param (
 		$adDomainDN,
 		$rwdcFQDN,
-		$gcFQDN,
-		$dfsrReplGroupName
+		$dfsrReplGroupName,
+		$domainsAndDCsHT
 	)
 
 	$dfsrReplGroupMemberList = @()
@@ -409,7 +420,7 @@ Function getDFSRReplGroupMembers {
 			$dfsrReplGroupMemberNameGuid = $_.Properties.name[0]
 		}
 
-		$searchRootReplGroupMemberCompAccount = [ADSI]"GC://$gcFQDN/$dfsrReplGroupMemberRefDN"
+		$searchRootReplGroupMemberCompAccount = [ADSI]"LDAP://$($domainsAndDCsHT[$($dfsrReplGroupMemberRefDN.SubString($dfsrReplGroupMemberRefDN.IndexOf("DC=")))])/$dfsrReplGroupMemberRefDN"
 		$searcherReplGroupMemberCompAccount = New-Object System.DirectoryServices.DirectorySearcher($searchRootReplGroupMemberCompAccount)
 		$searcherReplGroupMemberCompAccount.PropertiesToLoad.Add("dNSHostName") | Out-Null
 		$replGroupMemberCompAccount = $searcherReplGroupMemberCompAccount.FindOne()
@@ -802,7 +813,7 @@ writeLog -dataToLog "                                                         \_
 writeLog -dataToLog "                                                           |    |_/ __ \ /  ___/\   __\" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                                                           |    |\  ___/ \___ \  |  |" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                                                           |____| \___  >____  > |__|" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "                                                                       \/     \/" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "                                                                      \/     \/" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                    ______________.___. _____________   ____________  .____          /\ ___________.___.____     ___________" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                   /   _____/\__  |   |/   _____/\   \ /   /\_____  \ |    |        / / \_   _____/|   |    |    \_   _____/" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                   \_____  \  /   |   |\_____  \  \   Y   /  /   |   \|    |       / /   |    __)  |   |    |     |    __)_" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
@@ -873,7 +884,7 @@ writeLog -dataToLog ""
 # Discover An RWDC/GC For AD Queries
 ###
 $rwdcFQDN = locateRWDC -fqdnADdomain $fqdnADDomainOfComputer                # Discovered RWDC Based On The Domain Membership Of the Computer Where This Script Is Running
-$gcFQDN = $thisADForest.FindGlobalCatalog().Name                            # Discovered GC
+#$gcFQDN = $thisADForest.FindGlobalCatalog().Name                            # Discovered GC
 
 ###
 # Get All Domains From The AD Forest, Create A Table, And Display That Table
@@ -900,7 +911,7 @@ writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInL
 $domainSpecificOption = 0
 $defaultDomainSpecificNumericOption = $null
 $domainNumericSelection = $null
-ForEach ($domainOption in $($tableOfDomainsInADForest | Sort-Object -Property "Domain Type" -Descending)) {
+ForEach ($domainOption in $($tableOfDomainsInADForest | Sort-Object -Property "Domain Type","Domain DN" -Descending)) {
 	$domainSpecificOption++
 	If ($domainOption."Domain Type" -eq "Root Domain") {
 		writeLog -dataToLog "[$domainSpecificOption] Domain DN: $($domainOption.'Domain DN'.PadRight(50, " ")) | FQDN: $($domainOption.'Domain FQDN'.PadRight(45, " ")) | Domain Type: $($domainOption.'Domain Type'.PadRight(25, " ")) [DEFAULT]" -lineType "DEFAULT" -logFileOnly $false -noDateTimeInLogLine $false
@@ -921,7 +932,7 @@ If ([String]::IsNullOrEmpty($targetDomainFQDN)) {
 		$domainNumericSelection = $defaultDomainSpecificNumericOption
 	}
 } Else {
-	$domainNumericSelection = ($($tableOfDomainsInADForest | Sort-Object -Property "Domain Type" -Descending)."Domain FQDN").IndexOf($targetDomainFQDN) + 1
+	$domainNumericSelection = ($($tableOfDomainsInADForest | Sort-Object -Property "Domain Type","Domain DN" -Descending)."Domain FQDN").IndexOf($targetDomainFQDN) + 1
 	If ($domainNumericSelection -eq 0) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "The Specified Domain '$targetDomainFQDN' DOES NOT Exist In The List Of Domains In The AD Forest '$($thisADForest.Name)'" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -934,7 +945,7 @@ If ([String]::IsNullOrEmpty($targetDomainFQDN)) {
 		BREAK
 	}
 }
-$domainOptionChosen = $($tableOfDomainsInADForest | Sort-Object -Property "Domain Type" -Descending)[$domainNumericSelection - 1]
+$domainOptionChosen = $($tableOfDomainsInADForest | Sort-Object -Property "Domain Type","Domain DN" -Descending)[$domainNumericSelection - 1]
 writeLog -dataToLog " > Option Chosen: [$domainNumericSelection] Domain DN: $($domainOptionChosen.'Domain DN') | FQDN: $($domainOptionChosen.'Domain FQDN') | Domain Type: $($domainOptionChosen.'Domain Type')" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 $rwdcADDomainFQDN = locateRWDC -fqdnADdomain $($domainOptionChosen.'Domain FQDN')
@@ -1067,7 +1078,7 @@ If ($replFolderOptionChosen.Type -eq "DFSR") {
 	writeLog -dataToLog "-----------------------------------------------------------------------------------------------------------------------------------------------" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "+++ LIST MEMBERS SUPPORTING THE REPLICATED FOLDER '$($dfsrReplFolderOptionChosen.'Repl Folder Name') ($dfsrReplFolderOptionChosenGroupName)' +++" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
-	$dfsrReplGroupMemberList = getDFSRReplGroupMembers -adDomainDN $($domainOptionChosen.'Domain DN') -rwdcFQDN $($domainsAndDCsHT[$($domainOptionChosen.'Domain FQDN')]) -gcFQDN $gcFQDN -dfsrReplGroupName $dfsrReplFolderOptionChosenGroupName
+	$dfsrReplGroupMemberList = getDFSRReplGroupMembers -adDomainDN $($domainOptionChosen.'Domain DN') -rwdcFQDN $($domainsAndDCsHT[$($domainOptionChosen.'Domain FQDN')]) -dfsrReplGroupName $dfsrReplFolderOptionChosenGroupName -domainsAndDCsHT $domainsAndDCsHT
 	$dfsrReplFolderConfigAndState = getDFSRReplFolderConfigAndState -dfsrReplGroupName $dfsrReplFolderOptionChosenGroupName -dfsrReplGroupMemberList $dfsrReplGroupMemberList -dfsrReplGroupContentSetName $($dfsrReplFolderOptionChosen."Repl Folder Name") -dfsrReplGroupContentSetGuid $dfsrReplFolderOptionChosenGuid -domainsAndDCsHT $domainsAndDCsHT
 	writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
@@ -1083,9 +1094,9 @@ If ($replFolderOptionChosen.Type -eq "DFSR") {
 	writeLog -dataToLog " --> Found [$((($dfsrReplFolderConfigAndState | Where-Object {$_.Reachable -eq $false -And $_.State -eq '<UNKNOWN>'}) | Measure-Object).count)] DFS-R Members With UNKNOWN DFS-R Replication State For The DFR-R Replicated Folder '$($dfsrReplFolderOptionChosen."Repl Folder Name")' (NOT REACHABLE)..." -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 	If ($($dfsrReplFolderConfigAndState | Where-Object {$_."Site Name" -eq $localComputerSiteName -And $_.Reachable -eq $true -And $_.State -eq "Enabled"})) {
-		$discoveredMemberFQDN = $($dfsrReplFolderConfigAndState | Where-Object {$_."Site Name" -eq $localComputerSiteName -And $_.Reachable -eq $true -And $_.State -eq "Enabled"})[0]."Member FQDN"
+		$discoveredMemberFQDN = $($dfsrReplFolderConfigAndState | Where-Object {$_."Site Name" -eq $localComputerSiteName -And $_.Reachable -eq $true -And $_.State -eq "Enabled" -And $_.Type -eq "RW"})[0]."Member FQDN"
 	} Else {
-		$discoveredMemberFQDN = $($dfsrReplFolderConfigAndState | Where-Object {$_.Reachable -eq $true -And $_.State -eq "Enabled"})[0]."Member FQDN"
+		$discoveredMemberFQDN = $($dfsrReplFolderConfigAndState | Where-Object {$_.Reachable -eq $true -And $_.State -eq "Enabled" -And $_.Type -eq "RW"})[0]."Member FQDN"
 	}
 }
 
@@ -1435,17 +1446,23 @@ writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInL
 # If The Replicated Folder Is Using NTFRS
 If ($replFolderOptionChosen.Type -eq "NTFRS") {
 	$replFolderPath = ($ntfrsReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."Repl Folder Path"
+	If ($($ntfrsReplFolderOptionChosen.'Repl Set Name') -eq "Domain System Volume (SYSVOL share)") {
+		$uncPathFolderSource = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$")) + "\Scripts"
+	} Else {
+		$uncPathFolderSource = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$"))
+	}	
 }
 # If The Replicated Folder Is Using DFSR
 If ($replFolderOptionChosen.Type -eq "DFSR") {
 	$replFolderPath = ($dfsrReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."Repl Folder Path"
+	If ($($dfsrReplFolderOptionChosen.'Repl Folder Name') -eq "SYSVOL Share") {
+		$uncPathFolderSource = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$")) + "\Scripts"
+	} Else {
+		$uncPathFolderSource = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$"))
+	}
 }
-If ($($dfsrReplFolderOptionChosen.'Repl Folder Name') -eq "SYSVOL Share") {
-	$uncPathFolder = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$")) + "\Scripts"
-} Else {
-	$uncPathFolder = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$"))
-}
-$tempCanaryFileName = "_fileReplConvergenceCheckTempFile_" + (Get-Date -f yyyyMMddHHmmss)
+$tempCanaryFileBaseName = "_fileReplConvergenceCheckTempFile_"
+$tempCanaryFileName = $tempCanaryFileBaseName + (Get-Date -f yyyyMMddHHmmss)
 # If The Replicated Folder Is Using NTFRS
 If ($replFolderOptionChosen.Type -eq "NTFRS") {
 	$tempCanaryFileContent = "...!!!...TEMP FILE TO TEST REPLICATION LATENCY/CONVERGENCE FOR REPLICATED FOLDER $($ntfrsReplFolderOptionChosen.'Repl Set Name'.ToUpper()) IN AD DOMAIN $($domainOptionChosen.'Domain FQDN') USING MEMBER $($sourceMemberFQDN.ToUpper()) AS THE SOURCE MEMBER...!!!..."
@@ -1464,10 +1481,10 @@ If ($replFolderOptionChosen.Type -eq "DFSR") {
 	writeLog -dataToLog "  --> In Replicated Folder: $($dfsrReplFolderOptionChosen.'Repl Folder Name')" -logFileOnly $false -noDateTimeInLogLine $false
 }
 writeLog -dataToLog "  --> On Source Member....: $sourceMemberFQDN" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "  --> In Folder (UNC Path): $uncPathFolder" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "  --> In Folder (UNC Path): $uncPathFolderSource" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "  --> With Full Name......: $tempCanaryFileName" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "  --> With Content........: $tempCanaryFileContent" -logFileOnly $false -noDateTimeInLogLine $false
-$uncPathCanaryFileSource = $uncPathFolder + "\" + $tempCanaryFileName + ".txt"
+$uncPathCanaryFileSource = $uncPathFolderSource + "\" + $tempCanaryFileName + ".txt"
 # If The Replicated Folder Is Using NTFRS
 If ($replFolderOptionChosen.Type -eq "NTFRS") {
 	Try {
@@ -1493,10 +1510,10 @@ If ($replFolderOptionChosen.Type -eq "DFSR") {
 		writeLog -dataToLog " Creating The Temporary Canary File..." -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 		$tempCanaryFileContent | Out-File -FilePath $uncPathCanaryFileSource -ErrorAction Stop
-		writeLog -dataToLog " Temporary Canary File [$uncPathCanaryFileSource] Has Been Created On Member [$sourceMemberFQDN] In Replicated Folder '$($dfsrReplFolderOptionChosen.'Repl Folder Name')'!" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog " Temporary Canary File [$uncPathCanaryFileSource] Has Been Created On The Source Member [$sourceMemberFQDN] In Replicated Folder '$($dfsrReplFolderOptionChosen.'Repl Folder Name')'!" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 	} Catch {
-		writeLog -dataToLog " Temporary Canary File [$uncPathCanaryFileSource] Could Not Be Created On Member [$sourceMemberFQDN] In Replicated Folder '$($dfsrReplFolderOptionChosen.'Repl Folder Name')'!" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog " Temporary Canary File [$uncPathCanaryFileSource] Could Not Be Created On The Source Member [$sourceMemberFQDN] In Replicated Folder '$($dfsrReplFolderOptionChosen.'Repl Folder Name')'!" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -1518,7 +1535,7 @@ If ($replFolderOptionChosen.Type -eq "NTFRS") {
 	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $(($ntfrsReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."Reachable")
 	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Type" -Value $(($ntfrsReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."Type")
 	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $(($ntfrsReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."Source")
-	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$('{0:N2}' -f "0.00"))
+	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([decimal]$('{0:N2}' -f "0.00"))
 	$resultsTableOfProcessedMembers += $resultsTableOfProcessedMemberEntry
 }
 # If The Replicated Folder Is Using DFSR
@@ -1532,22 +1549,22 @@ If ($replFolderOptionChosen.Type -eq "DFSR") {
 	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "State" -Value $(($dfsrReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."State")
 	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Type" -Value $(($dfsrReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."Type")
 	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $(($dfsrReplFolderConfigAndState | Where-Object {$_."Member FQDN" -match $sourceMemberFQDN})."Source")
-	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$('{0:N2}' -f "0.00"))
+	$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([decimal]$('{0:N2}' -f "0.00"))
 	$resultsTableOfProcessedMembers += $resultsTableOfProcessedMemberEntry
 }
 
 ###
-# Go Through The Process Of Checking Each Domain Controller To See If The Temporary Canary Object Already Has Replicated To It
+# Go Through The Process Of Checking Each Member To See If The Temporary Canary File Already Has Replicated To It
 ###
 $startDateTime = Get-Date
 $i = 0
 # If The Replicated Folder Is Using NTFRS
 If ($replFolderOptionChosen.Type -eq "NTFRS") {
-	writeLog -dataToLog "  --> Found [$($($ntfrsReplFolderConfigAndState | Measure-Object).Count)] Domain Controllers(s) Supporting/Hosting The Chosen Replicated Folder..." -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "  --> Found [$($($ntfrsReplFolderConfigAndState | Measure-Object).Count)] Member(s) Supporting/Hosting The Chosen Replicated Folder..." -logFileOnly $false -noDateTimeInLogLine $false
 }
 # If The Replicated Folder Is Using DFSR
 If ($replFolderOptionChosen.Type -eq "DFSR") {
-	writeLog -dataToLog "  --> Found [$($($dfsrReplFolderConfigAndState | Measure-Object).Count)] Domain Controllers(s) Supporting/Hosting The Chosen Replicated Folder..." -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "  --> Found [$($($dfsrReplFolderConfigAndState | Measure-Object).Count)] Member(s) Supporting/Hosting The Chosen Replicated Folder..." -logFileOnly $false -noDateTimeInLogLine $false
 }
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 
@@ -1582,10 +1599,10 @@ While($continue) {
 				If ($replMember.Reachable -eq $true) {
 					writeLog -dataToLog "     - Member Is Reachable..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 					$replFolderPath = $replMember."Repl Folder Path"
-					If ($($ntfrsReplFolderOptionChosen.'Repl Set Name') -eq "SYSVOL Share") {
+					If ($($ntfrsReplFolderOptionChosen.'Repl Set Name') -eq "Domain System Volume (SYSVOL share)") {
 						$uncPathFolder = "\\" + $($replMember."Member FQDN") + "\" + $($replFolderPath.Replace(":","$")) + "\Scripts"
 					} Else {
-						$uncPathFolder = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$"))
+						$uncPathFolder = "\\" + $($replMember."Member FQDN") + "\" + $($replFolderPath.Replace(":","$"))
 					}
 					$uncPathCanaryFile = $uncPathFolder + "\" + $tempCanaryFileName + ".txt"
 					$connectionResult = "SUCCESS"
@@ -1610,7 +1627,7 @@ While($continue) {
 							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $($replMember."Reachable")
 							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Type" -Value $($replMember."Type")
 							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($replMember."Source")
-							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$("{0:n2}" -f ((Get-Date) - $startDateTime).TotalSeconds))
+							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([decimal]$("{0:n2}" -f ((Get-Date) - $startDateTime).TotalSeconds))
 							$resultsTableOfProcessedMembers += $resultsTableOfProcessedMemberEntry
 						}
 					} Else {
@@ -1649,7 +1666,7 @@ While($continue) {
 					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "State" -Value $($replMember."State")
 					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Type" -Value $($replMember."Type")
 					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($replMember."Source")
-					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([string]"<$connectionResult>")
+					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([string]"<$connectionResult>")
 					$resultsTableOfProcessedMembers += $resultsTableOfProcessedMemberEntry
 				}
 			}
@@ -1682,7 +1699,7 @@ While($continue) {
 					If ($($dfsrReplFolderOptionChosen.'Repl Folder Name') -eq "SYSVOL Share") {
 						$uncPathFolder = "\\" + $($replMember."Member FQDN") + "\" + $($replFolderPath.Replace(":","$")) + "\Scripts"
 					} Else {
-						$uncPathFolder = "\\" + $sourceMemberFQDN + "\" + $($replFolderPath.Replace(":","$"))
+						$uncPathFolder = "\\" + $($replMember."Member FQDN") + "\" + $($replFolderPath.Replace(":","$"))
 					}
 					$uncPathCanaryFile = $uncPathFolder + "\" + $tempCanaryFileName + ".txt"
 					$connectionResult = "SUCCESS"
@@ -1719,7 +1736,7 @@ While($continue) {
 							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "State" -Value $($replMember."State")
 							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Type" -Value $($replMember."Type")
 							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($replMember."Source")
-							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$("{0:n2}" -f ((Get-Date) - $startDateTime).TotalSeconds))
+							$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([decimal]$("{0:n2}" -f ((Get-Date) - $startDateTime).TotalSeconds))
 							$resultsTableOfProcessedMembers += $resultsTableOfProcessedMemberEntry
 						}
 					} Else {
@@ -1761,7 +1778,7 @@ While($continue) {
 					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "State" -Value $($replMember."State")
 					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Type" -Value $($replMember."Type")
 					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($replMember."Source")
-					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([string]"<$connectionResult>")
+					$resultsTableOfProcessedMemberEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([string]"<$connectionResult>")
 					$resultsTableOfProcessedMembers += $resultsTableOfProcessedMemberEntry
 				}
 			}
@@ -1792,12 +1809,81 @@ writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "  Deleting Temporary Canary File... " -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 Remove-Item $uncPathCanaryFileSource -Force
-writeLog -dataToLog "  Temporary Canary File [$uncPathCanaryFileSource] Has Been Deleted On The Source Member!" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "  Temporary Canary File [$uncPathCanaryFileSource] Has Been Deleted On The Source Member [$sourceMemberFQDN]!" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 
 ###
 # Output The Results Table Containing The Information Of Each Domain Controller And How Long It Took To Reach That Domain Controllerr After The Creation On The Source RWDC
 ###
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "`n$($resultsTableOfProcessedMembers | Sort-Object -Property Time | Format-Table -Wrap -AutoSize | Out-String)" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "`n$($resultsTableOfProcessedMembers | Sort-Object -Property TimeDiscvrd | Format-Table * -Wrap -AutoSize | Out-String)" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
+
+###
+# Checking If There Are Temporary Canary Files Left Over From Previous Executions Of The Script
+###
+writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "-----------------------------------------------------------------------------------------------------------------------------------------------" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+# If The Replicated Folder Is Using NTFRS
+If ($replFolderOptionChosen.Type -eq "NTFRS") {
+	writeLog -dataToLog "+++ TEMPORARY CANARY FILES FROM PREVIOUS EXECUTIONS EXIST IN THE REPLICATED FOLDER '$($ntfrsReplFolderOptionChosen.'Repl Set Name')' +++" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+}
+# If The Replicated Folder Is Using DFSR
+If ($replFolderOptionChosen.Type -eq "DFSR") {
+	writeLog -dataToLog "+++ TEMPORARY CANARY FILES FROM PREVIOUS EXECUTIONS EXIST IN THE REPLICATED FOLDER '$($dfsrReplFolderOptionChosen.'Repl Folder Name') ($dfsrReplFolderOptionChosenGroupName)' +++" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+}
+writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "Checking Existence Of Temporary Canary Files From Previous Executions Of The Script Within The Folder '$uncPathFolderSource'..." -logFileOnly $false -noDateTimeInLogLine $false
+$prevTempCanaryFiles = Get-ChildItem $uncPathFolderSource -Filter "$tempCanaryFileBaseName*.txt"
+If (($prevTempCanaryFiles | Measure-Object).Count -gt 0) {
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "The Following Temporary Canary Files From Previous Executions Of The Script Were Found:" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	$prevTempCanaryFiles | ForEach-Object {
+		writeLog -dataToLog "  $($_.FullName)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	}
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	$tempCanaryFileConfirmationOptions = @()
+	$tempCanaryFileConfirmationOptions += "No"
+	$tempCanaryFileConfirmationOptions += "Yes"
+	$tempCanaryFileConfirmationSpecificOption = 0
+	$defaultTempCanaryFileConfirmationSpecificNumericOption = $null
+	$tempCanaryFileConfirmationNumericSelection = $null
+	ForEach ($tempCanaryFileConfirmationOption in $tempCanaryFileConfirmationOptions) {
+		$tempCanaryFileConfirmationSpecificOption++
+		If ($tempCanaryFileConfirmationOption -eq $tempCanaryFileConfirmationOptions[0]) {
+			writeLog -dataToLog "[$tempCanaryFileConfirmationSpecificOption] $($tempCanaryFileConfirmationOption.PadRight(75, " ")) [DEFAULT]" -lineType "DEFAULT" -logFileOnly $false -noDateTimeInLogLine $false
+			$defaultTempCanaryFileConfirmationSpecificNumericOption = $tempCanaryFileConfirmationSpecificOption
+		} Else {
+			writeLog -dataToLog "[$tempCanaryFileConfirmationSpecificOption] $tempCanaryFileConfirmationOption" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+		}
+	}
+	writeLog -dataToLog "" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "REMARK: Specify A Number Or Press [ENTER] For The Default Option" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+	Write-Host ""
+	Do {
+		$tempCanaryFileConfirmationNumericSelection = Read-Host "Cleanup Temp Canary Files Previous Executions?...."
+	} Until (([int]$tempCanaryFileConfirmationNumericSelection -gt 0 -And [int]$tempCanaryFileConfirmationNumericSelection -le ($tempCanaryFileConfirmationOptions | Measure-Object).Count) -Or $([string]::IsNullOrEmpty($tempCanaryFileConfirmationNumericSelection)))
+	If ([string]::IsNullOrEmpty($tempCanaryFileConfirmationNumericSelection)) {
+		$tempCanaryFileConfirmationNumericSelection = $defaultTempCanaryFileConfirmationSpecificNumericOption
+	}
+	$tempCanaryFileConfirmationOptionChosen = $tempCanaryFileConfirmationOptions[$tempCanaryFileConfirmationNumericSelection - 1]
+	writeLog -dataToLog " > Option Chosen: [$tempCanaryFileConfirmationNumericSelection] $tempCanaryFileConfirmationOptionChosen" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	If ($tempCanaryFileConfirmationOptionChosen -eq "Yes") {
+		$prevTempCanaryFiles | ForEach-Object {
+			writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "  Deleting Temporary Canary File From Previous Execution Of The Script... " -logFileOnly $false -noDateTimeInLogLine $false
+			Remove-Item $($_.FullName) -Force
+			writeLog -dataToLog "  Temporary Canary File [$($_.FullName)] Has Been Deleted On The Source Member [$sourceMemberFQDN]!" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false			
+		}
+	}
+} Else {
+	writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "No Temporary Canary Files From Previous Executions Of The Script Were NOT Found" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+}

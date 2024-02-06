@@ -35,6 +35,17 @@
 
 ## RELEASE NOTES
 
+* v0.6, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+
+  * Code Improvement: Changed the function "getDFSRReplGroupMembers" to not use a GC, but instead use a RWDC from the respective AD domain of the object that is being looked for
+  * Code Improvement: When discovering a member, added a check to choose a member with a writable copy of the replicated folder
+  * Improved User Experience: Added a check to determine if there are Temporary Canary Object leftovers from previous executions of the script that were not cleaned up because the script was aborted or it crashed
+  *	Improved User Experience: Changed the timing column from "Time" to "TimeDiscvrd" (Time Discovered) which specifies how much time it took to find/see the file on the member of the replicated folder
+  *	Improved User Experience: The AD domain list presented is now consistently presented in the same order
+  *	Bug Fix: Fixed the unc path for the folder when SYSVOL is still using NTFRS. Temporary Canary File is now created in the Scripts folder (SYSVOL only!)
+  *	Bug Fix: When not using SYSVOL as replicated folder, fixed the Member to target for checking the existence of the Temporary Canary File
+  *	Bug Fix: Changed the variable name of the unc path for the folder on the source from $uncPathFolder to $uncPathFolderSource, to also target the correct (source) Member for cleanup of the file
+
 * v0.5, 2024-01-31, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 
   * Script Improvement: Complete rewrite of the script
@@ -85,8 +96,9 @@ This PoSH script provides the following functions:
 * All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors
 * It checks if specified replica set (NTFRS) or replicated folder (DFSR) exists. If not, the script aborts.
 * It checks if specified member exists. If not, the script aborts.
-* Disjoint namespaces and discontiguous namespaces are supported
-* During interactive mode, after specifying the source member, it will count the files in the replicated folder on every member by default. This can be disabled through a parameter
+* At the end it checks if any Temporary Canary Files exist from previous execution of the script and offers to clean up (In the chosen Replicated Folder only!).
+* Disjoint namespaces and discontiguous namespaces are supported.
+* During interactive mode, after specifying the source member, it will count the files in the replicated folder on every member by default. This can be disabled through a parameter.
 
 ## PARAMETER(S)
 
@@ -178,7 +190,7 @@ Check The File Replication Convergence/Latency Using Automated Mode For The Repl
 * For the SYSVOL, it only works correctly when either using NTFRS, or DFSR in a completed state!
 * Admin shares must be enabled
 * For File Count, WinRM must be possible against the remote machines
-* Yes, I'm aware,, there is duplicate code to support both NTFRS and DFSR. This was the easiest way to support both without too much complexity. It also allows to remove it easily when NTFRS cannot be used anymore
+* Yes, I'm aware, there is duplicate code to support both NTFRS and DFSR. This was the easiest way to support both without too much complexity. It also allows to remove it easily when NTFRS cannot be used anymore
 
 ## SCREENSHOTS
 
