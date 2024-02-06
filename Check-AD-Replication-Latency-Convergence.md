@@ -37,12 +37,12 @@
 
 * v0.7, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 
- * Improved User Experience: Added a check to determine if there are Temporary Canary Object leftovers from previous executions of the script that were not cleaned up because the script was aborted or it crashed
- * Improved User Experience: Previous the delta time was calculated when the object was found by the script and compare it to the start time. Now it provided 2 different timings:
- * The "TimeDiscvrd" (Time Discovered) specifies how much time it took to find/see the object on a DC
- * The "TimeReplctd" (Time Replicated) specifies how much time it took to reach the DC
- * Bug Fix: Fixed issue when the fsmoroleowner property did not contain a value
- * Improved User Experience: The naming context list presented is now consistently presented in the same order
+  * Improved User Experience: Added a check to determine if there are Temporary Canary Object leftovers from previous executions of the script that were not cleaned up because the script was aborted or it crashed
+  * Improved User Experience: Previous the delta time was calculated when the object was found by the script and compare it to the start time. Now it provided 2 different timings:
+  * The "TimeDiscvrd" (Time Discovered) specifies how much time it took to find/see the object on a DC
+  * The "TimeReplctd" (Time Replicated) specifies how much time it took to reach the DC
+  * Bug Fix: Fixed issue when the fsmoroleowner property did not contain a value
+  * Improved User Experience: The naming context list presented is now consistently presented in the same order
 
 * v0.6, 2024-01-31, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
   * Code Improvement: Added additional information, minor changes
