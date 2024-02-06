@@ -17,7 +17,7 @@ Param (
 ###
 # Version Of Script
 ###
-$version = "v0.6, 2024-01-31"
+$version = "v0.7, 2024-02-06"
 
 <#
 	AUTHOR
@@ -53,6 +53,14 @@ $version = "v0.6, 2024-01-31"
 		- N.A.
 
 	RELEASE NOTES
+		v0.7, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+			- Improved User Experience: Added a check to determine if there are Temporary Canary Object leftovers from previous executions of the script that were not cleaned up because the script was aborted or it crashed
+			- Improved User Experience: Previous the delta time was calculated when the object was found by the script and compare it to the start time. Now it provided 2 different timings:
+				- The "TimeDiscvrd" (Time Discovered) specifies how much time it took to find/see the object on a DC
+				- The "TimeReplctd" (Time Replicated) specifies how much time it took to reach the DC
+			- Bug Fix: Fixed issue when the fsmoroleowner property did not contain a value
+			- Improved User Experience: The naming context list presented is now consistently presented in the same order
+
 		v0.6, 2024-01-31, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- Code Improvement: Added additional information, minor changes
 
@@ -73,7 +81,7 @@ $version = "v0.6, 2024-01-31"
 			- New Feature: Added STOP option
 			- Code Improvement: Added few extra columns to output extra info of DCs,
 			- Code Improvement: Better detection of unavailable DCs/GCs
-			- Added screen adjustment section
+			- Code Improvement: Added screen adjustment section
 
 		v0.1, 2013-03-02, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- Initial version of the script
@@ -117,6 +125,7 @@ $version = "v0.6, 2024-01-31"
 	- All is displayed on screen using different colors depending on what is occuring. The same thing is also logged to a log file without colors
 	- It checks if specified NC exists. If not, the script aborts.
 	- It checks if specified RWDC exists. If not, the script aborts.
+	- At the end it checks if any Temporary Canary Objects exist from previous execution of the script and offers to clean up (In the chosen NC only!).
 	- Disjoint namespaces and discontiguous namespaces are supported
 	- The script DOES NOT allow or support the schema partition to be targeted!
 
@@ -411,7 +420,7 @@ writeLog -dataToLog "                                                         \_
 writeLog -dataToLog "                                                           |    |_/ __ \ /  ___/\   __\" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                                                           |    |\  ___/ \___ \  |  |" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                                                           |____| \___  >____  > |__|" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "                                                                       \/     \/" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "                                                                      \/     \/" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                             _____  ________    __________              .__  .__               __  .__" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                            /  _  \ \______ \   \______   \ ____ ______ |  | |__| ____ _____ _/  |_|__| ____   ____" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "                           /  /_\  \ |    |  \   |       _// __ \\____ \|  | |  |/ ___\\__  \\   __\  |/  _ \ /    \" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
@@ -503,7 +512,7 @@ writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInL
 $ncSpecificOption = 0
 $defaultNCSpecificNumericOption = $null
 $ncNumericSelection = $null
-ForEach ($ncOption in $($tableOfNCsInADForest | Sort-Object -Property "NC Type" -Descending)) {
+ForEach ($ncOption in $($tableOfNCsInADForest | Sort-Object -Property "NC Type","NC DN" -Descending)) {
 	$ncSpecificOption++
 	If ($ncOption."Name/FQDN" -eq "Enterprise Configuration") {
 		writeLog -dataToLog "[$ncSpecificOption] NC DN: $($ncOption.'NC DN'.PadRight(50, " ")) | Name/FQDN: $($ncOption.'Name/FQDN'.PadRight(35, " ")) | NC Type: $($ncOption.'NC Type'.PadRight(10, " ")) [DEFAULT]" -lineType "DEFAULT" -logFileOnly $false -noDateTimeInLogLine $false
@@ -535,7 +544,7 @@ If ([String]::IsNullOrEmpty($targetNCDN)) {
 
 		BREAK
 	}
-	$ncNumericSelection = ($($tableOfNCsInADForest | Sort-Object -Property "NC Type" -Descending)."NC DN").IndexOf($targetNCDN) + 1
+	$ncNumericSelection = ($($tableOfNCsInADForest | Sort-Object -Property "NC Type","NC DN" -Descending)."NC DN").IndexOf($targetNCDN) + 1
 	If ($ncNumericSelection -eq 0) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "The Specified Naming Context '$targetNCDN' DOES NOT Exist In The List Of Naming Contexts In The AD Forest '$($thisADForest.Name)'" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -548,7 +557,7 @@ If ([String]::IsNullOrEmpty($targetNCDN)) {
 		BREAK
 	}
 }
-$ncOptionChosen = $($tableOfNCsInADForest | Sort-Object -Property "NC Type" -Descending)[$ncNumericSelection - 1]
+$ncOptionChosen = $($tableOfNCsInADForest | Sort-Object -Property "NC Type","NC DN" -Descending)[$ncNumericSelection - 1]
 writeLog -dataToLog " > Option Chosen: [$ncNumericSelection] NC DN: $($ncOptionChosen.'NC DN') | Name/FQDN: $($ncOptionChosen.'Name/FQDN') | NC Type: $($ncOptionChosen.'NC Type')" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 
@@ -678,10 +687,12 @@ If ($ncOptionChosen."NC Type" -eq "Forest NC") {
 	$searchRootFSMORoleOwner = [ADSI]"LDAP://$discoveredRWDCFQDN/CN=Partitions,$($ncOptionChosen.'NC DN')"
 	$searcherFSMORoleOwner = New-Object System.DirectoryServices.DirectorySearcher($searchRootFSMORoleOwner)
 	$fsmoRoleOwnerObject = $searcherFSMORoleOwner.FindOne()
-	$ntdsSettingsObjectFsmoRoleOwnerDN = $fsmoRoleOwnerObject.Properties.fsmoroleowner[0]
-	If ([String]::IsNullOrEmpty($ntdsSettingsObjectFsmoRoleOwnerDN) -Or $ntdsSettingsObjectFsmoRoleOwnerDN -match "0ADEL:") {
+	If ([String]::IsNullOrEmpty($($fsmoRoleOwnerObject.Properties.fsmoroleowner))) {
+		$fsmoRoleOwnerFQDN = "UNDEFINED / INVALID"
+	} ElseIf ($($fsmoRoleOwnerObject.Properties.fsmoroleowner[0]) -match "0ADEL:") {
 		$fsmoRoleOwnerFQDN = "UNDEFINED / INVALID"
 	} Else {
+		$ntdsSettingsObjectFsmoRoleOwnerDN = $fsmoRoleOwnerObject.Properties.fsmoroleowner[0]
 		$fsmoRoleOwnerFQDN = convertNTDSSettingsObjectDNToFQDN -rwdcFQDN $rwdcFQDN -ntdsSettingsObjectDN $ntdsSettingsObjectFsmoRoleOwnerDN
 	}
 }
@@ -747,10 +758,12 @@ If ($ncOptionChosen."NC Type" -eq "Domain NC") {
 	$searchRootFSMORoleOwner = [ADSI]"LDAP://$discoveredRWDCFQDN/$($ncOptionChosen.'NC DN')"
 	$searcherFSMORoleOwner = New-Object System.DirectoryServices.DirectorySearcher($searchRootFSMORoleOwner)
 	$fsmoRoleOwnerObject = $searcherFSMORoleOwner.FindOne()
-	$ntdsSettingsObjectFsmoRoleOwnerDN = $fsmoRoleOwnerObject.Properties.fsmoroleowner[0]
-	If ([String]::IsNullOrEmpty($ntdsSettingsObjectFsmoRoleOwnerDN) -Or $ntdsSettingsObjectFsmoRoleOwnerDN -match "0ADEL:") {
+	If ([String]::IsNullOrEmpty($($fsmoRoleOwnerObject.Properties.fsmoroleowner))) {
+		$fsmoRoleOwnerFQDN = "UNDEFINED / INVALID"
+	} ElseIf ($($fsmoRoleOwnerObject.Properties.fsmoroleowner[0]) -match "0ADEL:") {
 		$fsmoRoleOwnerFQDN = "UNDEFINED / INVALID"
 	} Else {
+		$ntdsSettingsObjectFsmoRoleOwnerDN = $fsmoRoleOwnerObject.Properties.fsmoroleowner[0]
 		$fsmoRoleOwnerFQDN = convertNTDSSettingsObjectDNToFQDN -rwdcFQDN $rwdcFQDN -ntdsSettingsObjectDN $ntdsSettingsObjectFsmoRoleOwnerDN
 	}
 }
@@ -781,10 +794,12 @@ If ($ncOptionChosen."NC Type" -eq "App NC") {
 	$searchRootFSMORoleOwner = [ADSI]"LDAP://$discoveredRWDCFQDN/CN=Infrastructure,$($ncOptionChosen.'NC DN')"
 	$searcherFSMORoleOwner = New-Object System.DirectoryServices.DirectorySearcher($searchRootFSMORoleOwner)
 	$fsmoRoleOwnerObject = $searcherFSMORoleOwner.FindOne()
-	$ntdsSettingsObjectFsmoRoleOwnerDN = $fsmoRoleOwnerObject.Properties.fsmoroleowner[0]
-	If ([String]::IsNullOrEmpty($ntdsSettingsObjectFsmoRoleOwnerDN) -Or $ntdsSettingsObjectFsmoRoleOwnerDN -match "0ADEL:") {
+	If ([String]::IsNullOrEmpty($($fsmoRoleOwnerObject.Properties.fsmoroleowner))) {
+		$fsmoRoleOwnerFQDN = "UNDEFINED / INVALID"
+	} ElseIf ($($fsmoRoleOwnerObject.Properties.fsmoroleowner[0]) -match "0ADEL:") {
 		$fsmoRoleOwnerFQDN = "UNDEFINED / INVALID"
 	} Else {
+		$ntdsSettingsObjectFsmoRoleOwnerDN = $fsmoRoleOwnerObject.Properties.fsmoroleowner[0]
 		$fsmoRoleOwnerFQDN = convertNTDSSettingsObjectDNToFQDN -rwdcFQDN $rwdcFQDN -ntdsSettingsObjectDN $ntdsSettingsObjectFsmoRoleOwnerDN
 	}
 }
@@ -913,7 +928,8 @@ If ($ncOptionChosen."NC Type" -eq "Domain NC") {
 If ($ncOptionChosen."NC Type" -eq "App NC") {
 	$container = $($ncOptionChosen."NC DN")
 }
-$tempCanaryObjectName = "_adReplConvergenceCheckTempObject_" + (Get-Date -f yyyyMMddHHmmss)
+$tempCanaryObjectBaseName = "_adReplConvergenceCheckTempObject_"
+$tempCanaryObjectName = $tempCanaryObjectBaseName + (Get-Date -f yyyyMMddHHmmss)
 $tempCanaryObjectDescription = "...!!!...TEMP OBJECT TO TEST AD REPLICATION LATENCY/CONVERGENCE THROUGH THE '$($ncOptionChosen."NC Type".ToUpper())'...!!!..."
 writeLog -dataToLog "  --> On Source RWDC......: $sourceRWDCFQDN" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "  --> With Full Name......: $tempCanaryObjectName" -logFileOnly $false -noDateTimeInLogLine $false
@@ -924,8 +940,9 @@ $tempCanaryObject = ([ADSI]"LDAP://$sourceRWDCFQDN/$container").Create("contact"
 $tempCanaryObject.Put("Description", $tempCanaryObjectDescription)
 $tempCanaryObject.SetInfo()
 $tempCanaryObjectDN = $tempCanaryObject.distinguishedname
+$tempCanaryObjectWhenChanged = $tempCanaryObject.Properties.whenChanged[0]
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "  Temporary Canary Object [$tempCanaryObjectDN] Has Been Created On RWDC [$sourceRWDCFQDN] In Naming Context '$($ncOptionChosen."NC DN")'!" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "  Temporary Canary Object [$tempCanaryObjectDN] Has Been Created On Source RWDC [$sourceRWDCFQDN] In Naming Context '$($ncOptionChosen."NC DN")'!" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 
 ###
@@ -942,7 +959,8 @@ $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Roo
 $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Is GC" -Value $(($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -match $sourceRWDCFQDN})."Is GC")
 $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $(($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -match $sourceRWDCFQDN})."Reachable")
 $resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $(($tableOfDCsToProcess | Where-Object {$_."DC FQDN" -match $sourceRWDCFQDN})."Source")
-$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$('{0:N2}' -f "0.00"))
+$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([decimal]$('{0:N2}' -f "0.00"))
+$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "TimeReplctd" -Value $([decimal]$('{0:N2}' -f "0.00"))
 $resultsTableOfProcessedDCs += $resultsTableOfProcessedDCEntry
 
 ###
@@ -1024,7 +1042,8 @@ While($continue) {
 					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Is GC" -Value $($ntDsa."Is GC")
 					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $($ntDsa."Reachable")
 					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($ntDsa."Source")
-					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([decimal]$("{0:n2}" -f ((Get-Date) - $startDateTime).TotalSeconds))
+					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([decimal]$("{0:n2}" -f ($(Get-Date) - $startDateTime).TotalSeconds))
+					$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "TimeReplctd" -Value $([decimal]$("{0:n2}" -f ($($objectPath.Properties.whenChanged[0]) - $tempCanaryObjectWhenChanged).TotalSeconds))
 					$resultsTableOfProcessedDCs += $resultsTableOfProcessedDCEntry
 				}
 			} Else { # If The Temporary Canary Object Does Not Yet Exist
@@ -1047,7 +1066,8 @@ While($continue) {
 				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Is GC" -Value $($ntDsa."Is GC")
 				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $($ntDsa."Reachable")
 				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Source" -Value $($ntDsa."Source")
-				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "Time" -Value $([string]"<$connectionResult>")
+				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "TimeDiscvrd" -Value $([string]"<$connectionResult>")
+				$resultsTableOfProcessedDCEntry | Add-Member -MemberType NoteProperty -Name "TimeReplctd" -Value $([string]"<$connectionResult>")
 				$resultsTableOfProcessedDCs += $resultsTableOfProcessedDCEntry
 			}
 		}
@@ -1077,12 +1097,78 @@ writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "  Deleting Temporary Canary Object... " -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 ([ADSI]"LDAP://$sourceRWDCFQDN/$container").Delete("contact","CN=$tempCanaryObjectName")
-writeLog -dataToLog "  Temporary Canary Object [$tempCanaryObjectDN] Has Been Deleted On The Source RWDC!" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "  Temporary Canary Object [$tempCanaryObjectDN] Has Been Deleted On Source RWDC [$sourceRWDCFQDN]!" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
 
 ###
 # Output The Results Table Containing The Information Of Each Domain Controller And How Long It Took To Reach That Domain Controllerr After The Creation On The Source RWDC
 ###
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "`n$($resultsTableOfProcessedDCs | Sort-Object -Property Time | Format-Table -Wrap -AutoSize | Out-String)" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "`n$($resultsTableOfProcessedDCs | Sort-Object -Property TimeReplctd | Format-Table * -Wrap -AutoSize | Out-String)" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
+
+###
+# Checking If There Are Temporary Canary Objects Left Over From Previous Executions Of The Script
+###
+writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "-----------------------------------------------------------------------------------------------------------------------------------------------" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "+++ TEMPORARY CANARY OBJECTS FROM PREVIOUS EXECUTIONS EXIST IN THE NAMING CONTEXT '$($ncOptionChosen."NC DN")' +++" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "" -lineType "MAINHEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "Checking Existence Of Temporary Canary Objects From Previous Executions Of The Script Within The Container '$container'..." -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
+$searchRootPrevTempCanaryObjs = [ADSI]"LDAP://$sourceRWDCFQDN/$container"
+$searcherPrevTempCanaryObjs = New-Object System.DirectoryServices.DirectorySearcher($searchRootPrevTempCanaryObjs)
+$searcherPrevTempCanaryObjs.Filter = "(&(objectClass=contact)(name=$tempCanaryObjectBaseName*))"
+$prevTempCanaryObjs = $searcherPrevTempCanaryObjs.FindAll()
+If (($prevTempCanaryObjs | Measure-Object).Count -gt 0) {
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "The Following Temporary Canary Objects From Previous Executions Of The Script Were Found:" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	$prevTempCanaryObjs | ForEach-Object {
+		writeLog -dataToLog "  $($_.Properties.distinguishedname[0])" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	}
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	$tempCanaryObjConfirmationOptions = @()
+	$tempCanaryObjConfirmationOptions += "No"
+	$tempCanaryObjConfirmationOptions += "Yes"
+	$tempCanaryObjConfirmationSpecificOption = 0
+	$defaultTempCanaryObjConfirmationSpecificNumericOption = $null
+	$tempCanaryObjConfirmationNumericSelection = $null
+	ForEach ($tempCanaryObjConfirmationOption in $tempCanaryObjConfirmationOptions) {
+		$tempCanaryObjConfirmationSpecificOption++
+		If ($tempCanaryObjConfirmationOption -eq $tempCanaryObjConfirmationOptions[0]) {
+			writeLog -dataToLog "[$tempCanaryObjConfirmationSpecificOption] $($tempCanaryObjConfirmationOption.PadRight(75, " ")) [DEFAULT]" -lineType "DEFAULT" -logFileOnly $false -noDateTimeInLogLine $false
+			$defaultTempCanaryObjConfirmationSpecificNumericOption = $tempCanaryObjConfirmationSpecificOption
+		} Else {
+			writeLog -dataToLog "[$tempCanaryObjConfirmationSpecificOption] $tempCanaryObjConfirmationOption" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+		}
+	}
+	writeLog -dataToLog "" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "REMARK: Specify A Number Or Press [ENTER] For The Default Option" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "ACTION" -logFileOnly $false -noDateTimeInLogLine $false
+	Write-Host ""
+	Do {
+		$tempCanaryObjConfirmationNumericSelection = Read-Host "Cleanup Temp Canary Objects Previous Executions?...."
+	} Until (([int]$tempCanaryObjConfirmationNumericSelection -gt 0 -And [int]$tempCanaryObjConfirmationNumericSelection -le ($tempCanaryObjConfirmationOptions | Measure-Object).Count) -Or $([string]::IsNullOrEmpty($tempCanaryObjConfirmationNumericSelection)))
+	If ([string]::IsNullOrEmpty($tempCanaryObjConfirmationNumericSelection)) {
+		$tempCanaryObjConfirmationNumericSelection = $defaultTempCanaryObjConfirmationSpecificNumericOption
+	}
+	$tempCanaryObjConfirmationOptionChosen = $tempCanaryObjConfirmationOptions[$tempCanaryObjConfirmationNumericSelection - 1]
+	writeLog -dataToLog " > Option Chosen: [$tempCanaryObjConfirmationNumericSelection] $tempCanaryObjConfirmationOptionChosen" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	If ($tempCanaryObjConfirmationOptionChosen -eq "Yes") {
+		$prevTempCanaryObjs | ForEach-Object {
+			writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "  Deleting Temporary Canary Object From Previous Execution Of The Script... " -logFileOnly $false -noDateTimeInLogLine $false
+			([ADSI]"LDAP://$sourceRWDCFQDN/$container").Delete("contact","CN=$($_.Properties.name[0])")
+			writeLog -dataToLog "  Temporary Canary Object [$($_.Properties.distinguishedname[0])] Has Been Deleted On Source RWDC [$sourceRWDCFQDN]!" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "" -logFileOnly $false -noDateTimeInLogLine $false			
+		}
+	}
+} Else {
+	writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "No Temporary Canary Objects From Previous Executions Of The Script Were Found" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+}
