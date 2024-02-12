@@ -5026,7 +5026,7 @@ Function getServerNames {
 ###
 # Clear The Screen
 ###
-Clear-Host
+Write-Host "`n`n`n`n`n" # replace clear-host to keep info visible
 
 ###
 # Configure The Appropriate Screen And Buffer Size To Make Sure Everything Fits Nicely
@@ -5041,11 +5041,20 @@ $uiConfigScreenSizeMax = $uiConfig.MaxPhysicalWindowSize
 $uiConfigScreenSizeMaxWidth = $uiConfigScreenSizeMax.Width
 $uiConfigScreenSizeMaxHeight = $uiConfigScreenSizeMax.Height
 $uiConfigScreenSize = $uiConfig.WindowSize
-If ($uiConfigScreenSizeMaxWidth -lt 240) {
-	$uiConfigScreenSize.Width = $uiConfigScreenSizeMaxWidth
-} Else {
-	$uiConfigScreenSize.Width = 240
+
+Try {
+    If ($uiConfigScreenSizeMaxWidth -lt 240) {
+	    $uiConfigScreenSize.Width = $uiConfigScreenSizeMaxWidth
+    } Else {
+	    $uiConfigScreenSize.Width = 240
+    }
 }
+Catch {
+    Logging "PS Host window cannot be configured. Do not run from within ISE or other editor." "ERROR" $ignoreRemote
+    break
+}
+Finally {}
+
 If ($uiConfigScreenSizeMaxHeight -lt 75) {
 	$uiConfigScreenSize.Height = $uiConfigScreenSizeMaxHeight - 5
 } Else {
@@ -5231,7 +5240,8 @@ If ($currentElevationStatus -eq "NOT-ELEVATED") {
 		$iTimer++
 	} Until ($iTimer -eq $sleepInSecs)
 	Logging "" "REMARK"
-	Start-Process Powershell -Wait -Verb runAs -ArgumentList "-NoExit -Command `"$currentScriptCmdLineUsed`""
+	$CurrentPath = (Get-Location).path
+    Start-Process Powershell -Wait -Verb runAs -ArgumentList "-NoExit -Command & {cd $CurrentPath;`"$currentScriptCmdLineUsed`"}"
 	Stop-Process -Id $PID
 }
 
