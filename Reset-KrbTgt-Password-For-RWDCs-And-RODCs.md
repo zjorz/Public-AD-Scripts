@@ -35,7 +35,7 @@
 * When targeting a remote AD forest for which no trust exist with the AD forest the running account belongs to, the public profile of WinRM may be used. In that case the PSSession for 'Get-GPOReport' may fail due to the default firewall exception only allowing access from remote computers on the same local subnet. In that case the default 'MaxTicketAge' (default 10 hours) and 'MaxClockSkew' (default 5 minutes) is used instead. You may see the following error:
 
 ```Text
-[&lt;FQDN TARGET DC&gt;] Connecting to remote server &lt;FQDN TARGET DC&gt; failed with the following error message : WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows access from this computer. By default, the WinRM firewall exception for public profiles limits access to remote computers within the same local subnet. For more information, see the about_Remote_Troubleshooting Help topic.
+[<FQDN TARGET DC>] Connecting to remote server <FQDN TARGET DC> failed with the following error message : WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows access from this computer. By default, the WinRM firewall exception for public profiles limits access to remote computers within the same local subnet. For more information, see the about_Remote_Troubleshooting Help topic.
 + CategoryInfo: OpenError: (<FQDN TARGET DC>:String) [], PSRemotingTransportException
 + FullyQualifiedErrorId: WinRMOperationTimeout,PSSessionStateBroken
 ```
