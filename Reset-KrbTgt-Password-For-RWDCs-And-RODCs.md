@@ -33,13 +33,12 @@
 ## KNOWN ISSUES/BUGS
 
 * When targeting a remote AD forest for which no trust exist with the AD forest the running account belongs to, the public profile of WinRM may be used. In that case the PSSession for 'Get-GPOReport' may fail due to the default firewall exception only allowing access from remote computers on the same local subnet. In that case the default 'MaxTicketAge' (default 10 hours) and 'MaxClockSkew' (default 5 minutes) is used instead. You may see the following error:
-<BR>
 
+```Text
 [&lt;FQDN TARGET DC&gt;] Connecting to remote server &lt;FQDN TARGET DC&gt; failed with the following error message : WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows access from this computer. By default, the WinRM firewall exception for public profiles limits access to remote computers within the same local subnet. For more information, see the about_Remote_Troubleshooting Help topic.
-<BR>
-&plus; CategoryInfo: OpenError: (&lt;FQDN TARGET DC&gt;:String) [], PSRemotingTransportException
-<BR>
-&plus; FullyQualifiedErrorId: WinRMOperationTimeout,PSSessionStateBroken
++ CategoryInfo: OpenError: (<FQDN TARGET DC>:String) [], PSRemotingTransportException
++ FullyQualifiedErrorId: WinRMOperationTimeout,PSSessionStateBroken
+```
 
 * Although this script can be used in an environment with Windows Server 2000/2003 RWDCs, it is NOT supported to do this. Windows Server 2000/2003 RWDCs cannot do KDC PAC validation using the previous (N-1) krbtgt password. Those RWDCs only attempt that with the current (N) password. That means that in the subset of KRB AP exchanges where KDC PAC validation is performed, authentication issues could be experienced because the target server gets a PAC validation error when asking the KDC (domain controller) to validate the KDC signature of the PAC that is inside the service ticket that was presented by the client to the server. This problem would potentially persist for the lifetime of the service ticket(s). It is also highly recommended NOT to use products that have reached their end support. Please upgrade as soon as possible.
 * This is not related to this script. When increasing the DFL from Windows Server 2003 to any higher level, the password of the KrbTgt Account will be reset automatically due to the introduction of AES encryption for Kerberos and the requirement to regenerate new keys for DES, RC4, AES128, AES256!
