@@ -5041,18 +5041,21 @@ $uiConfigScreenSizeMax = $uiConfig.MaxPhysicalWindowSize
 $uiConfigScreenSizeMaxWidth = $uiConfigScreenSizeMax.Width
 $uiConfigScreenSizeMaxHeight = $uiConfigScreenSizeMax.Height
 $uiConfigScreenSize = $uiConfig.WindowSize
-If ($uiConfigScreenSizeMaxWidth -lt 240) {
-	$uiConfigScreenSize.Width = $uiConfigScreenSizeMaxWidth
-} Else {
-	$uiConfigScreenSize.Width = 240
-}
-If ($uiConfigScreenSizeMaxHeight -lt 75) {
-	$uiConfigScreenSize.Height = $uiConfigScreenSizeMaxHeight - 5
-} Else {
-	$uiConfigScreenSize.Height = 75
+If ($uiConfigScreenSizeMax -and $uiConfigScreenSize) { # to avoid any error message at the start
+	If ($uiConfigScreenSizeMaxWidth -lt 240) {
+		$uiConfigScreenSize.Width = $uiConfigScreenSizeMaxWidth
+	} Else {
+		$uiConfigScreenSize.Width = 240
+	}
+	If ($uiConfigScreenSizeMaxHeight -lt 75) {
+		$uiConfigScreenSize.Height = $uiConfigScreenSizeMaxHeight - 5
+	} Else {
+		$uiConfigScreenSize.Height = 75
+	}
+	$uiConfig.WindowSize = $uiConfigScreenSize
 }
 $uiConfig.BufferSize = $uiConfigBufferSize
-$uiConfig.WindowSize = $uiConfigScreenSize
+
 
 ###
 # Definition Of Some Constants
