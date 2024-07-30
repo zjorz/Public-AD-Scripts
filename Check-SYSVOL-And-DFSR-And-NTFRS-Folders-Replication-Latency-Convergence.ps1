@@ -19,7 +19,7 @@ Param (
 ###
 # Version Of Script
 ###
-$version = "v0.6, 2024-02-06"
+$version = "v0.7, 2024-07-30"
 
 <#
 	AUTHOR
@@ -55,6 +55,10 @@ $version = "v0.6, 2024-02-06"
 		- N.A.
 
 	RELEASE NOTES
+		v0.7, 2024-07-30, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+			- Bug Fix: Fixed case sensitivity bug when specifying a DFR Replicated Folder Name through the command line
+			- Bug Fix: Fixed case sensitivity bug when specifying a Domain FQDN through the command line
+
 		v0.6, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- Code Improvement: Changed the function "getDFSRReplGroupMembers" to not use a GC, but instead use a RWDC from the respective AD domain of the object that is being looked for
 			- Code Improvement: When discovering a member, added a check to choose a member with a writable copy of the replicated folder
@@ -932,7 +936,7 @@ If ([String]::IsNullOrEmpty($targetDomainFQDN)) {
 		$domainNumericSelection = $defaultDomainSpecificNumericOption
 	}
 } Else {
-	$domainNumericSelection = ($($tableOfDomainsInADForest | Sort-Object -Property "Domain Type","Domain DN" -Descending)."Domain FQDN").IndexOf($targetDomainFQDN) + 1
+	$domainNumericSelection = ($($tableOfDomainsInADForest | Sort-Object -Property "Domain Type","Domain DN" -Descending)."Domain FQDN").ToUpper().IndexOf($targetDomainFQDN.ToUpper()) + 1
 	If ($domainNumericSelection -eq 0) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "The Specified Domain '$targetDomainFQDN' DOES NOT Exist In The List Of Domains In The AD Forest '$($thisADForest.Name)'" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -1026,7 +1030,7 @@ If ([String]::IsNullOrEmpty($targetReplFolder)) {
 		$dfsrReplFolderNumericSelection = $defaultDfsrReplFolderSpecificNumericOption
 	}
 } Else {
-	$dfsrReplFolderNumericSelection = ($replFolderList."Repl Folder Name").IndexOf($targetReplFolder) + 1
+	$dfsrReplFolderNumericSelection = ($replFolderList."Repl Folder Name").ToUpper().IndexOf($targetReplFolder.ToUpper()) + 1
 	If ($dfsrReplFolderNumericSelection -eq 0) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "The Specified Replicated Folder '$targetReplFolder' DOES NOT Exist In The List Of Replicated Folders In The AD Domain '$($domainOptionChosen.'Domain FQDN')'" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false

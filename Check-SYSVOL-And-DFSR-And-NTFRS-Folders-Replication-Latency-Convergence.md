@@ -35,6 +35,11 @@
 
 ## RELEASE NOTES
 
+* v0.7, 2024-07-30, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+
+  * Bug Fix: Fixed case sensitivity bug when specifying a DFR Replicated Folder Name through the command line
+  * Bug Fix: Fixed case sensitivity bug when specifying a Domain FQDN through the command line
+
 * v0.6, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 
   * Code Improvement: Changed the function "getDFSRReplGroupMembers" to not use a GC, but instead use a RWDC from the respective AD domain of the object that is being looked for
