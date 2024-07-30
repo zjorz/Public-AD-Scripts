@@ -35,6 +35,10 @@
 
 ## RELEASE NOTES
 
+* v0.8, 2024-07-30, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+
+  * Bug Fix: Fixed case sensitivity bug when specifying a Naming Context DN through the command line
+
 * v0.7, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 
   * Improved User Experience: Added a check to determine if there are Temporary Canary Object leftovers from previous executions of the script that were not cleaned up because the script was aborted or it crashed

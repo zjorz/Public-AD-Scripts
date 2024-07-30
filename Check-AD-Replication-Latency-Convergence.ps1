@@ -17,7 +17,7 @@ Param (
 ###
 # Version Of Script
 ###
-$version = "v0.7, 2024-02-06"
+$version = "v0.8, 2024-07-30"
 
 <#
 	AUTHOR
@@ -53,6 +53,9 @@ $version = "v0.7, 2024-02-06"
 		- N.A.
 
 	RELEASE NOTES
+		v0.8, 2024-07-30, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
+			- Bug Fix: Fixed case sensitivity bug when specifying a Naming Context DN through the command line
+
 		v0.7, 2024-02-06, Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]:
 			- Improved User Experience: Added a check to determine if there are Temporary Canary Object leftovers from previous executions of the script that were not cleaned up because the script was aborted or it crashed
 			- Improved User Experience: Previous the delta time was calculated when the object was found by the script and compare it to the start time. Now it provided 2 different timings:
@@ -544,7 +547,7 @@ If ([String]::IsNullOrEmpty($targetNCDN)) {
 
 		BREAK
 	}
-	$ncNumericSelection = ($($tableOfNCsInADForest | Sort-Object -Property "NC Type","NC DN" -Descending)."NC DN").IndexOf($targetNCDN) + 1
+	$ncNumericSelection = ($($tableOfNCsInADForest | Sort-Object -Property "NC Type","NC DN" -Descending)."NC DN").ToUpper().IndexOf($targetNCDN.ToUpper()) + 1
 	If ($ncNumericSelection -eq 0) {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "The Specified Naming Context '$targetNCDN' DOES NOT Exist In The List Of Naming Contexts In The AD Forest '$($thisADForest.Name)'" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
