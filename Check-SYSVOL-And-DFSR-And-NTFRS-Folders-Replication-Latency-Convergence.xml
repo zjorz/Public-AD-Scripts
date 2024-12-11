@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<checkFileReplConvergence xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+	<!-- Use The Connection Parameters In The XML Config File -->
+	<useXMLConfigFileSettings>FALSE</useXMLConfigFileSettings>
+
+	<!-- Default In Script = 500 | When Checking If The Host Is Reachable Over Certain Port, This Is The Timeout In Milliseconds -->
+	<connectionTimeoutInMilliSeconds>500</connectionTimeoutInMilliSeconds>
+
+	<!-- Default In Script = 30 | When Checking The Canary Object Against A Certain Replica Member, And The Replica Member Is Reachable, This Is The Amount Of Minutes, When Exceeded, It Stops Checking That Replica Member (This Could Be The Case When NTFRS/DFSR Replication Is Broken Somehow Or The Replica Member Is In A Unhealthy State) -->
+	<timeoutInMinutes>30</timeoutInMinutes>
+
+	<!-- Default In Script = 1 | Minimum Amount Of Threads Per Runspace Pool -->
+	<runspacePoolMinThreads>1</runspacePoolMinThreads>
+
+	<!-- Default In Script = 2048 | Minimum Amount Of Threads Per Runspace Pool -->
+	<runspacePoolMaxThreads>2048</runspacePoolMaxThreads>
+
+	<!-- Default In Script = 500 | The Check Delay In Milliseconds Between Checks Against Each Individual Replica Member -->
+	<delayInMilliSecondsBetweenChecks>500</delayInMilliSecondsBetweenChecks>
+</checkFileReplConvergence>
