@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<checkADReplConvergence xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+	<!-- Use The Connection Parameters In The XML Config File -->
+	<useXMLConfigFileSettings>FALSE</useXMLConfigFileSettings>
+
+	<!-- Default In Script = 500 | When Checking If The Host Is Reachable Over Certain Port, This Is The Timeout In Milliseconds -->
+	<connectionTimeoutInMilliSeconds>500</connectionTimeoutInMilliSeconds>
+
+	<!-- Default In Script = 30 | When Checking The Canary Object Against A Certain DC/GC, And The DC/GC Is Reachable, This Is The Amount Of Minutes, When Exceeded, It Stops Checking That DC/GC (This Could Be The Case When AD Replication Is Broken Somehow Or The DC/GC Is In A Unhealthy State) -->
+	<timeoutInMinutes>30</timeoutInMinutes>
+
+	<!-- Default In Script = 1 | Minimum Amount Of Threads Per Runspace Pool -->
+	<runspacePoolMinThreads>1</runspacePoolMinThreads>
+
+	<!-- Default In Script = 2048 | Minimum Amount Of Threads Per Runspace Pool -->
+	<runspacePoolMaxThreads>1024</runspacePoolMaxThreads>
+
+	<!-- Default In Script = 500 | The Check Delay In Milliseconds Between Checks Against Each Individual DC/GC -->
+	<delayInMilliSecondsBetweenChecks>500</delayInMilliSecondsBetweenChecks>
+</checkADReplConvergence>
