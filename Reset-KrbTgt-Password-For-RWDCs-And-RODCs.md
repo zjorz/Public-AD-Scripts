@@ -1,5 +1,15 @@
 # SCRIPT: Reset-KrbTgt-Password-For-RWDCs-And-RODCs
 
+## NOTIFICATION 2025-01-23
+
+It is OK to use the current published version of the script (v3.4, 2023-03-04).
+
+However, I have updated the script with new enhancements, improvements and features.
+
+The new version will be v3.6 (v3.5 was never published). The updated script is currently being tested.
+
+It will be published in the very near future! Stay tuned!
+
 ## AUTHOR/FEEDBACK
 
 * Written By: Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]
