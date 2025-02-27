@@ -327,6 +327,10 @@ $version = "v3.4, 2023-03-04"
 		determined. In case the RODC is not available or its "source" server is not available, the RWDC with the PDC FSMO is used to reset
 		the password of the krbtgt account in use by that RODC. If the RODC is available a check will be done against its database, and if
 		not available the check is skipped
+	- The -runAsSystem parameter is for automation. It can ONLY be used when the domain is local and the script is running as SYSTEM on a
+		DC with FSMO Role PDC Emulator. The privilege checks of Domain and Enterprise Admins group memberships are replaced with NT AUTHORITY/SYSTEM
+		checks. Since it is not interactive, the -NoInfo and -ContinueOps parameters are implicitly true. However, the modeOfOperation and
+		targetKrbTgtAccountScope parameters must be provided.
 
 .PARAMETER noInfo
 	With this parameter it is possible to skip the information at the beginning of the script when running the script in an automated manner such
@@ -426,6 +430,11 @@ $version = "v3.4, 2023-03-04"
 	Execute The Script - Automated And Sending The Log File Through Mail - Mode 6 With Specific RODCs (But Not All) As Scope
 
 	.\Reset-KrbTgt-Password-For-RWDCs-And-RODCs.ps1 -noInfo -modeOfOperation resetModeKrbTgtProdAccountsResetOnce -targetedADforestFQDN DOMAIN.COM -targetedADdomainFQDN CHILD.DOMAIN.COM -targetKrbTgtAccountScope specificRODCs -targetRODCFQDNList "RODC1.DOMAIN.COM","RODC2.DOMAIN.COM","RODC3.DOMAIN.COM" -continueOps -sendMailWithLogFile
+
+	.EXAMPLE
+	Execute The Script - Automated And Sending The Log File Through Mail - Mode 6 With All RWDCs As Scope - Running as SYSTEM on PDC Emulator
+
+	.\Reset-KrbTgt-Password-For-RWDCs-And-RODCs.ps1 -noInfo -modeOfOperation resetModeKrbTgtProdAccountsResetOnce -targetedADforestFQDN DOMAIN.COM -targetedADdomainFQDN CHILD.DOMAIN.COM -targetKrbTgtAccountScope allRWDCs -continueOps -sendMailWithLogFile
 
 .NOTES
 	- Required PoSH CMDlets: GPMC PoSH CMDlets on all targeted RWDCs!!! (and the S.DS.P Posh CMDlets are INCLUDED in this script!)
