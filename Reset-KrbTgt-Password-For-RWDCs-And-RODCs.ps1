@@ -1,18 +1,40 @@
 ###
 # Parameters Used By Script
 ###
+[CmdletBinding(DefaultParameterSetName = "Interactive")]
 Param (
+	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
 	[switch]$noInfo,
+
+	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$true, ParameterSetName="Automation")]
 	[ValidateSet("infoMode", "simulModeCanaryObject", "simulModeKrbTgtTestAccountsWhatIf", "resetModeKrbTgtTestAccountsResetOnce", "simulModeKrbTgtProdAccountsWhatIf", "resetModeKrbTgtProdAccountsResetOnce")]
 	[string]$modeOfOperation,
+
+	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="Automation")]
 	[string]$targetedADforestFQDN,
+
+	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="Automation")]
 	[string]$targetedADdomainFQDN,
+
+	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$true, ParameterSetName="Automation")]
 	[ValidateSet("allRWDCs", "allRODCs", "specificRODCs")]
 	[string]$targetKrbTgtAccountScope,
+
+	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="Automation")]
 	[string[]]$targetRODCFQDNList,
+
+	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
 	[switch]$continueOps,
+
 	[switch]$sendMailWithLogFile,
-    [switch]$runAsSystem
+
+	[Parameter(Mandatory=$true, ParameterSetName="Automation")]
+	[switch]$runAsSystem
 )
 
 ###
@@ -3128,7 +3150,7 @@ Function loadPoSHModules($poshModule, $ignoreRemote) {
 		} Else {
 			Logging "PoSH Module '$poshModule' Is Not Available To Load..." "ERROR" $ignoreRemote
 			Logging "The PoSH Module '$poshModule' Is Required For This Script To Work..." "REMARK" $ignoreRemote
-			If ($runAsSystem.IsPresent -eq $false){
+			If ($PSCmdlet.ParameterSetName -eq "Interactive"){
 				$confirmInstallPoshModuleYESNO = $null
 				$confirmInstallPoshModuleYESNO = Read-Host "Would You Like To Install The PoSH Module '$poshModule' NOW? [Yes|No]"
 				If ($confirmInstallPoshModuleYESNO.ToUpper() -eq "YES" -Or $confirmInstallPoshModuleYESNO.ToUpper() -eq "Y") {
@@ -5261,14 +5283,28 @@ Add-Type -Path $(($sdspDLLPath | Sort-Object -Property ProductVersion)[0].FullNa
 #>
 
 ###
+# Check if running as SYSTEM in an automated task
+###
+Logging "------------------------------------------------------------------------------------------------------------------------------------------------------" "HEADER"
+Logging "INFORMATION REGARDING SCRIPT MODE..." "HEADER"
+Logging ""
+
+If ($PSCmdlet.ParameterSetName -eq "Automation"){
+	$noInfo = $true
+	$continueOps = $true
+	Logging "Running Mode: AUTOMATION" "REMARK"
+} Else {
+	Logging "Running Mode: INTERACTIVE" "REMARK"
+}
+Logging ""
+
+###
 # Technical Information
 ###
 ### Providing Information About What The Script Is Capable Of And How The Script Works
 Logging "------------------------------------------------------------------------------------------------------------------------------------------------------" "HEADER"
 Logging "INFORMATION REGARDING KRBTGT ACCOUNTS AND PASSWORD RESETS..." "HEADER"
 Logging ""
-
-If ($runAsSystem.IsPresent) { $noInfo = $true }
 
 If ($noInfo) {
 	Logging "Do you want to read information about the script, its functions, its behavior and the impact? [YES | NO]: NO" "ACTION"
@@ -5611,7 +5647,7 @@ Switch ($modeOfOperation) {
 	Default {$modeOfOperationNr = $null}
 }
 If ($null -eq $modeOfOperationNr) {
-	If ($runAsSystem.IsPresent -eq $false){
+	If ($PSCmdlet.ParameterSetName -eq "Interactive"){
 		Logging "Please specify the mode of operation: " "ACTION-NO-NEW-LINE"
 		$modeOfOperationNr = Read-Host
 	}
@@ -5696,7 +5732,7 @@ Logging ""
 
 # Ask Which AD Forest To Target
 If ($targetedADforestFQDN -eq "") {
-	If ($runAsSystem.IsPresent -eq $false) {
+	If ($PSCmdlet.ParameterSetName -eq "Interactive") {
 		Logging "For the AD forest to be targeted, please provide the FQDN or press [ENTER] for the current AD forest: " "ACTION-NO-NEW-LINE"
 		$targetedADforestFQDN = Read-Host
 	}
@@ -6106,7 +6142,7 @@ $targetedDomainObjectSID = $targetedADdomainData.DomainSID
 
 # If The AD Forest Is Local, Then We Can Test For Role Membership Of Either Domain Admins Or Enterprise Admins.
 If ($localADforest -eq $true) {
-    If ($runAsSystem.IsPresent){
+    If ($PSCmdlet.ParameterSetName -eq "Automation"){
 
         # Validate If running as SYSTEM
         If ($adRunningUserAccount -like "NT AUTHORITY\SYSTEM") {
@@ -6337,8 +6373,8 @@ If ($thisADDomain) {
 	#$targetedADdomainRWDCFQDNWithPDCFSMOFQDN = $thisADDomain.PDCEmulator
 	$targetedADdomainRWDCFQDNWithPDCFSMOFQDN = $thisADDomain.PdcRoleOwner.Name
 
-    # If $runAsSystem, it must be localADforest and script must be running on PDC Emulator
-    If ($runAsSystem.IsPresent -And ($localComputerName -NotLike $targetedADdomainRWDCFQDNWithPDCFSMOFQDN -Or $localADforest -eq $false)){
+    # If running as a script, it must be localADforest and script must be running on PDC Emulator
+    If ($PSCmdlet.ParameterSetName -eq "Automation" -And ($localComputerName -NotLike $targetedADdomainRWDCFQDNWithPDCFSMOFQDN -Or $localADforest -eq $false)){
         # Asked for runAsSystem but the script is not running on PDC Emulator
             Logging "The script is NOT running as SYSTEM" "ERROR"
 		    Logging "" "ERROR"
@@ -7584,7 +7620,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 		Default {$targetKrbTgtAccountNr = $null}
 	}
 	If ($null -eq $targetKrbTgtAccountNr) {
-		If ($runAsSystem.IsPresent -eq $false) {
+		If ($PSCmdlet.ParameterSetName -eq "Interactive") {
 			Logging "Please specify the scope of KrbTgt Account to target: " "ACTION-NO-NEW-LINE"
 			$targetKrbTgtAccountNr = Read-Host
 		} Else {
