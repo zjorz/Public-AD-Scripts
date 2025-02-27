@@ -1,36 +1,38 @@
 ###
 # Parameters Used By Script
 ###
-[CmdletBinding(DefaultParameterSetName = "Interactive")]
+[CmdletBinding(DefaultParameterSetName = "On-demand")]
 Param (
-	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
 	[switch]$noInfo,
 
-	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
 	[Parameter(Mandatory=$true, ParameterSetName="Automation")]
 	[ValidateSet("infoMode", "simulModeCanaryObject", "simulModeKrbTgtTestAccountsWhatIf", "resetModeKrbTgtTestAccountsResetOnce", "simulModeKrbTgtProdAccountsWhatIf", "resetModeKrbTgtProdAccountsResetOnce")]
 	[string]$modeOfOperation,
 
-	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
 	[Parameter(Mandatory=$false, ParameterSetName="Automation")]
 	[string]$targetedADforestFQDN,
 
-	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
 	[Parameter(Mandatory=$false, ParameterSetName="Automation")]
 	[string]$targetedADdomainFQDN,
 
-	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
 	[Parameter(Mandatory=$true, ParameterSetName="Automation")]
 	[ValidateSet("allRWDCs", "allRODCs", "specificRODCs")]
 	[string]$targetKrbTgtAccountScope,
 
-	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
 	[Parameter(Mandatory=$false, ParameterSetName="Automation")]
 	[string[]]$targetRODCFQDNList,
 
-	[Parameter(Mandatory=$false, ParameterSetName="Interactive")]
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
 	[switch]$continueOps,
 
+	[Parameter(Mandatory=$false, ParameterSetName="On-demand")]
+	[Parameter(Mandatory=$false, ParameterSetName="Automation")]
 	[switch]$sendMailWithLogFile,
 
 	[Parameter(Mandatory=$true, ParameterSetName="Automation")]
@@ -329,7 +331,7 @@ $version = "v3.4, 2023-03-04"
 		not available the check is skipped
 	- The -runAsSystem parameter is for automation. It can ONLY be used when the domain is local and the script is running as SYSTEM on a
 		DC with FSMO Role PDC Emulator. The privilege checks of Domain and Enterprise Admins group memberships are replaced with NT AUTHORITY/SYSTEM
-		checks. Since it is not interactive, the -NoInfo and -ContinueOps parameters are implicitly true. However, the modeOfOperation and
+		checks. Since it is not On-demand, the -NoInfo and -ContinueOps parameters are implicitly true. However, the modeOfOperation and
 		targetKrbTgtAccountScope parameters must be provided.
 
 .PARAMETER noInfo
@@ -3159,7 +3161,7 @@ Function loadPoSHModules($poshModule, $ignoreRemote) {
 		} Else {
 			Logging "PoSH Module '$poshModule' Is Not Available To Load..." "ERROR" $ignoreRemote
 			Logging "The PoSH Module '$poshModule' Is Required For This Script To Work..." "REMARK" $ignoreRemote
-			If ($PSCmdlet.ParameterSetName -eq "Interactive"){
+			If ($PSCmdlet.ParameterSetName -eq "On-demand"){
 				$confirmInstallPoshModuleYESNO = $null
 				$confirmInstallPoshModuleYESNO = Read-Host "Would You Like To Install The PoSH Module '$poshModule' NOW? [Yes|No]"
 				If ($confirmInstallPoshModuleYESNO.ToUpper() -eq "YES" -Or $confirmInstallPoshModuleYESNO.ToUpper() -eq "Y") {
@@ -5294,18 +5296,10 @@ Add-Type -Path $(($sdspDLLPath | Sort-Object -Property ProductVersion)[0].FullNa
 ###
 # Check if running as SYSTEM in an automated task
 ###
-Logging "------------------------------------------------------------------------------------------------------------------------------------------------------" "HEADER"
-Logging "INFORMATION REGARDING SCRIPT MODE..." "HEADER"
-Logging ""
-
 If ($PSCmdlet.ParameterSetName -eq "Automation"){
 	$noInfo = $true
 	$continueOps = $true
-	Logging "Running Mode: AUTOMATION" "REMARK"
-} Else {
-	Logging "Running Mode: INTERACTIVE" "REMARK"
 }
-Logging ""
 
 ###
 # Technical Information
@@ -5656,7 +5650,7 @@ Switch ($modeOfOperation) {
 	Default {$modeOfOperationNr = $null}
 }
 If ($null -eq $modeOfOperationNr) {
-	If ($PSCmdlet.ParameterSetName -eq "Interactive"){
+	If ($PSCmdlet.ParameterSetName -eq "On-demand"){
 		Logging "Please specify the mode of operation: " "ACTION-NO-NEW-LINE"
 		$modeOfOperationNr = Read-Host
 	}
@@ -5741,7 +5735,7 @@ Logging ""
 
 # Ask Which AD Forest To Target
 If ($targetedADforestFQDN -eq "") {
-	If ($PSCmdlet.ParameterSetName -eq "Interactive") {
+	If ($PSCmdlet.ParameterSetName -eq "On-demand") {
 		Logging "For the AD forest to be targeted, please provide the FQDN or press [ENTER] for the current AD forest: " "ACTION-NO-NEW-LINE"
 		$targetedADforestFQDN = Read-Host
 	}
@@ -7629,7 +7623,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 		Default {$targetKrbTgtAccountNr = $null}
 	}
 	If ($null -eq $targetKrbTgtAccountNr) {
-		If ($PSCmdlet.ParameterSetName -eq "Interactive") {
+		If ($PSCmdlet.ParameterSetName -eq "On-demand") {
 			Logging "Please specify the scope of KrbTgt Account to target: " "ACTION-NO-NEW-LINE"
 			$targetKrbTgtAccountNr = Read-Host
 		} Else {
