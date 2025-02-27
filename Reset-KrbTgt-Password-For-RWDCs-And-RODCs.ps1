@@ -11,7 +11,8 @@ Param (
 	[string]$targetKrbTgtAccountScope,
 	[string[]]$targetRODCFQDNList,
 	[switch]$continueOps,
-	[switch]$sendMailWithLogFile
+	[switch]$sendMailWithLogFile,
+    [switch]$runAsSystem
 )
 
 ###
@@ -813,13 +814,13 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                     $data[$prop] = [Flattener]::FlattenArray($data[$prop])
                     <#
                     #support for DirSync struct for Add/Remove values of multival props
-                    if($data[$prop] -is [System.Collections.Hashtable])
+                    If ($data[$prop] -is [System.Collections.Hashtable])
                     {
                         $data[$prop] = [pscustomobject]$data[$prop]
                     }
                     #>
                 }
-                if($Sort)
+                If ($Sort)
                 {
                     #flatten and sort attributes
                     $coll=@($coll | Sort-Object)
@@ -837,13 +838,13 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         #remove unwanted props
         $PropertiesToLoad=@($propertiesToLoad | where-object {$_ -notin @('distinguishedName','1.1')})
         #if asterisk in list of props to load, load all props available on object despite of  required list
-        if($propertiesToLoad.Count -eq 0) {$NoAttributes=$true} else {$NoAttributes=$false}
-        if('*' -in $PropertiesToLoad) {$PropertiesToLoad=@()}
+        If ($propertiesToLoad.Count -eq 0) {$NoAttributes=$true} else {$NoAttributes=$false}
+        If ('*' -in $PropertiesToLoad) {$PropertiesToLoad=@()}
 
         #configure LDAP connection
         #preserve original value of referral chasing
         $referralChasing = $LdapConnection.SessionOptions.ReferralChasing
-        if($pageSize -gt 0) {
+        If ($pageSize -gt 0) {
             #paged search silently fails in AD when chasing referrals
             $LdapConnection.SessionOptions.ReferralChasing="None"
         }
@@ -855,7 +856,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 
         #search base
         #we support passing $null as SearchBase - used for Global Catalog searches
-        if($null -ne $searchBase)
+        If ($null -ne $searchBase)
         {
             #we support pipelining of strings, or objects containing distinguishedName property
             switch($searchBase.GetType().Name) {
@@ -865,7 +866,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 }
                 default
                 {
-                    if($null -ne $searchBase.distinguishedName)
+                    If ($null -ne $searchBase.distinguishedName)
                     {
                         $rq.DistinguishedName=$searchBase.distinguishedName
                     }
@@ -877,11 +878,11 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         $rq.Filter=$searchFilter
 
 
-        if($DirSync -eq 'None')
+        If ($DirSync -eq 'None')
         {
             #paged search control for paged search
             #for DirSync searches, paging is not used
-            if($pageSize -gt 0) {
+            If ($pageSize -gt 0) {
                 [System.DirectoryServices.Protocols.PageResultRequestControl]$pagedRqc = new-object System.DirectoryServices.Protocols.PageResultRequestControl($pageSize)
                 #asking server for best effort with paging
                 $pagedRqc.IsCritical=$false
@@ -890,7 +891,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 
             #Attribute scoped query
             #Not supported for DirSync
-            if(-not [String]::IsNullOrEmpty($asq)) {
+            If (-not [String]::IsNullOrEmpty($asq)) {
                 [System.DirectoryServices.Protocols.AsqRequestControl]$asqRqc=new-object System.DirectoryServices.Protocols.AsqRequestControl($ASQ)
                 $rq.Controls.Add($asqRqc) | Out-Null
             }
@@ -899,7 +900,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
             $rq.Scope=$searchScope
 
             #size limit
-            if($SizeLimit -gt 0)
+            If ($SizeLimit -gt 0)
             {
                 $rq.SizeLimit = $SizeLimit
             }
@@ -912,7 +913,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 
             #Windows AD/LDS server always returns objectGuid for DirSync.
             #We do not want to hide it, we just make sure it is returned in proper format
-            if('objectGuid' -notin $BinaryProps)
+            If ('objectGuid' -notin $BinaryProps)
             {
                 $BinaryProps+='objectGuid'
             }
@@ -921,7 +922,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         #add additional controls that caller may have passed
         foreach($ctrl in $AdditionalControls) {$rq.Controls.Add($ctrl) | Out-Null}
 
-        if($Timeout -ne [timespan]::Zero)
+        If ($Timeout -ne [timespan]::Zero)
         {
             #server side timeout
             $rq.TimeLimit=$Timeout
@@ -931,7 +932,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         {
             'None' {
                 #standard search
-                if($NoAttributes)
+                If ($NoAttributes)
                 {
                     #just run as fast as possible when not loading any attribs
                     GetResultsDirectlyInternal -rq $rq -conn $LdapConnection -PropertiesToLoad $PropertiesToLoad -AdditionalProperties $AdditionalProperties -BinaryProperties $BinaryProps -Timeout $Timeout -NoAttributes | PostProcess
@@ -983,7 +984,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 
     End
     {
-        if(($pageSize -gt 0) -and ($null -ne $ReferralChasing)) {
+        If (($pageSize -gt 0) -and ($null -ne $ReferralChasing)) {
             #revert to original value of referral chasing on connection
             $LdapConnection.SessionOptions.ReferralChasing=$ReferralChasing
         }
@@ -1077,25 +1078,25 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         #if there was error, let the exception go to caller and do not continue
 
         #sometimes server does not return anything if we ask for property that is not supported by protocol
-        if($rsp.Entries.Count -eq 0) {
+        If ($rsp.Entries.Count -eq 0) {
             return;
         }
 
         $data=[PSCustomObject]$propDef
 
-        if ($rsp.Entries[0].Attributes['configurationNamingContext']) {
+        If ($rsp.Entries[0].Attributes['configurationNamingContext']) {
             $data.configurationNamingContext = [NamingContext]::Parse($rsp.Entries[0].Attributes['configurationNamingContext'].GetValues([string])[0])
         }
-        if ($rsp.Entries[0].Attributes['schemaNamingContext']) {
+        If ($rsp.Entries[0].Attributes['schemaNamingContext']) {
             $data.schemaNamingContext = [NamingContext]::Parse(($rsp.Entries[0].Attributes['schemaNamingContext'].GetValues([string]))[0])
         }
-        if ($rsp.Entries[0].Attributes['rootDomainNamingContext']) {
+        If ($rsp.Entries[0].Attributes['rootDomainNamingContext']) {
             $data.rootDomainNamingContext = [NamingContext]::Parse($rsp.Entries[0].Attributes['rootDomainNamingContext'].GetValues([string])[0])
         }
-        if ($rsp.Entries[0].Attributes['defaultNamingContext']) {
+        If ($rsp.Entries[0].Attributes['defaultNamingContext']) {
             $data.defaultNamingContext = [NamingContext]::Parse($rsp.Entries[0].Attributes['defaultNamingContext'].GetValues([string])[0])
         }
-        if($null -ne $rsp.Entries[0].Attributes['approximateHighestInternalObjectID']) {
+        If ($null -ne $rsp.Entries[0].Attributes['approximateHighestInternalObjectID']) {
             try {
                 $data.approximateHighestInternalObjectID=[long]::Parse($rsp.Entries[0].Attributes['approximateHighestInternalObjectID'].GetValues([string]))
             }
@@ -1104,7 +1105,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $data.approximateHighestInternalObjectID=$rsp.Entries[0].Attributes['approximateHighestInternalObjectID'].GetValues([string])
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['highestCommittedUSN']) {
+        If ($null -ne $rsp.Entries[0].Attributes['highestCommittedUSN']) {
             try {
                 $data.highestCommittedUSN=[long]::Parse($rsp.Entries[0].Attributes['highestCommittedUSN'].GetValues([string]))
             }
@@ -1113,7 +1114,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $data.highestCommittedUSN=$rsp.Entries[0].Attributes['highestCommittedUSN'].GetValues([string])
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['currentTime']) {
+        If ($null -ne $rsp.Entries[0].Attributes['currentTime']) {
             $val = ($rsp.Entries[0].Attributes['currentTime'].GetValues([string]))[0]
             try {
                 $data.currentTime = [DateTime]::ParseExact($val,'yyyyMMddHHmmss.fZ',[CultureInfo]::InvariantCulture,[System.Globalization.DateTimeStyles]::None)
@@ -1122,15 +1123,15 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $data.currentTime=$val
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['dnsHostName']) {
+        If ($null -ne $rsp.Entries[0].Attributes['dnsHostName']) {
             $data.dnsHostName = ($rsp.Entries[0].Attributes['dnsHostName'].GetValues([string]))[0]
         }
-        if($null -ne $rsp.Entries[0].Attributes['ldapServiceName']) {
+        If ($null -ne $rsp.Entries[0].Attributes['ldapServiceName']) {
             $data.ldapServiceName = ($rsp.Entries[0].Attributes['ldapServiceName'].GetValues([string]))[0]
         }
-        if($null -ne $rsp.Entries[0].Attributes['dsServiceName']) {
+        If ($null -ne $rsp.Entries[0].Attributes['dsServiceName']) {
             $val = ($rsp.Entries[0].Attributes['dsServiceName'].GetValues([string]))[0]
-            if($val.Contains(';'))
+            If ($val.Contains(';'))
             {
                 $data.dsServiceName = $val.Split(';')
             }
@@ -1138,9 +1139,9 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $data.dsServiceName=$val
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['serverName']) {
+        If ($null -ne $rsp.Entries[0].Attributes['serverName']) {
             $val = ($rsp.Entries[0].Attributes['serverName'].GetValues([string]))[0]
-            if($val.Contains(';'))
+            If ($val.Contains(';'))
             {
                 $data.serverName = $val.Split(';')
             }
@@ -1148,96 +1149,96 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $data.serverName=$val
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['supportedControl']) {
+        If ($null -ne $rsp.Entries[0].Attributes['supportedControl']) {
             $data.supportedControl = ( ($rsp.Entries[0].Attributes['supportedControl'].GetValues([string])) | Sort-Object )
         }
-        if($null -ne $rsp.Entries[0].Attributes['supportedLdapPolicies']) {
+        If ($null -ne $rsp.Entries[0].Attributes['supportedLdapPolicies']) {
             $data.supportedLdapPolicies = ( ($rsp.Entries[0].Attributes['supportedLdapPolicies'].GetValues([string])) | Sort-Object )
         }
-        if($null -ne $rsp.Entries[0].Attributes['supportedSASLMechanisms']) {
+        If ($null -ne $rsp.Entries[0].Attributes['supportedSASLMechanisms']) {
             $data.supportedSASLMechanisms = ( ($rsp.Entries[0].Attributes['supportedSASLMechanisms'].GetValues([string])) | Sort-Object )
         }
-        if($null -ne $rsp.Entries[0].Attributes['supportedConfigurableSettings']) {
+        If ($null -ne $rsp.Entries[0].Attributes['supportedConfigurableSettings']) {
             $data.supportedConfigurableSettings = ( ($rsp.Entries[0].Attributes['supportedConfigurableSettings'].GetValues([string])) | Sort-Object )
         }
-        if($null -ne $rsp.Entries[0].Attributes['namingContexts']) {
+        If ($null -ne $rsp.Entries[0].Attributes['namingContexts']) {
             $data.namingContexts = @()
             foreach($ctxDef in ($rsp.Entries[0].Attributes['namingContexts'].GetValues([string]))) {
                 $data.namingContexts+=[NamingContext]::Parse($ctxDef)
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['dsSchemaAttrCount']) {
+        If ($null -ne $rsp.Entries[0].Attributes['dsSchemaAttrCount']) {
             [long]$outVal=-1
             [long]::TryParse($rsp.Entries[0].Attributes['dsSchemaAttrCount'].GetValues([string]),[ref]$outVal) | Out-Null
             $data.dsSchemaAttrCount=$outVal
         }
-        if($null -ne $rsp.Entries[0].Attributes['dsSchemaClassCount']) {
+        If ($null -ne $rsp.Entries[0].Attributes['dsSchemaClassCount']) {
             [long]$outVal=-1
             [long]::TryParse($rsp.Entries[0].Attributes['dsSchemaClassCount'].GetValues([string]),[ref]$outVal) | Out-Null
             $data.dsSchemaClassCount=$outVal
         }
-        if($null -ne $rsp.Entries[0].Attributes['dsSchemaPrefixCount']) {
+        If ($null -ne $rsp.Entries[0].Attributes['dsSchemaPrefixCount']) {
             [long]$outVal=-1
             [long]::TryParse($rsp.Entries[0].Attributes['dsSchemaPrefixCount'].GetValues([string]),[ref]$outVal) | Out-Null
             $data.dsSchemaPrefixCount=$outVal
         }
-        if($null -ne $rsp.Entries[0].Attributes['isGlobalCatalogReady']) {
+        If ($null -ne $rsp.Entries[0].Attributes['isGlobalCatalogReady']) {
             $data.isGlobalCatalogReady=[bool]$rsp.Entries[0].Attributes['isGlobalCatalogReady'].GetValues([string])
         }
-        if($null -ne $rsp.Entries[0].Attributes['isSynchronized']) {
+        If ($null -ne $rsp.Entries[0].Attributes['isSynchronized']) {
             $data.isSynchronized=[bool]$rsp.Entries[0].Attributes['isSynchronized'].GetValues([string])
         }
-        if($null -ne $rsp.Entries[0].Attributes['pendingPropagations']) {
+        If ($null -ne $rsp.Entries[0].Attributes['pendingPropagations']) {
             $data.pendingPropagations=$rsp.Entries[0].Attributes['pendingPropagations'].GetValues([string])
         }
-        if($null -ne $rsp.Entries[0].Attributes['subSchemaSubEntry']) {
+        If ($null -ne $rsp.Entries[0].Attributes['subSchemaSubEntry']) {
             $data.subSchemaSubEntry=$rsp.Entries[0].Attributes['subSchemaSubEntry'].GetValues([string])[0]
         }
-         if($null -ne $rsp.Entries[0].Attributes['domainControllerFunctionality']) {
+         If ($null -ne $rsp.Entries[0].Attributes['domainControllerFunctionality']) {
             $data.domainControllerFunctionality=[int]$rsp.Entries[0].Attributes['domainControllerFunctionality'].GetValues([string])[0]
         }
-        if($null -ne $rsp.Entries[0].Attributes['domainFunctionality']) {
+        If ($null -ne $rsp.Entries[0].Attributes['domainFunctionality']) {
             $data.domainFunctionality=[int]$rsp.Entries[0].Attributes['domainFunctionality'].GetValues([string])[0]
         }
-        if($null -ne $rsp.Entries[0].Attributes['forestFunctionality']) {
+        If ($null -ne $rsp.Entries[0].Attributes['forestFunctionality']) {
             $data.forestFunctionality=[int]$rsp.Entries[0].Attributes['forestFunctionality'].GetValues([string])[0]
         }
-        if($null -ne $rsp.Entries[0].Attributes['msDS-ReplAllInboundNeighbors']) {
+        If ($null -ne $rsp.Entries[0].Attributes['msDS-ReplAllInboundNeighbors']) {
             $data.'msDS-ReplAllInboundNeighbors'=@()
             foreach($val in $rsp.Entries[0].Attributes['msDS-ReplAllInboundNeighbors'].GetValues([string])) {
                 $data.'msDS-ReplAllInboundNeighbors'+=[xml]$Val.SubString(0,$Val.Length-2)
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['msDS-ReplConnectionFailures']) {
+        If ($null -ne $rsp.Entries[0].Attributes['msDS-ReplConnectionFailures']) {
             $data.'msDS-ReplConnectionFailures'=@()
             foreach($val in $rsp.Entries[0].Attributes['msDS-ReplConnectionFailures'].GetValues([string])) {
                 $data.'msDS-ReplConnectionFailures'+=[xml]$Val.SubString(0,$Val.Length-2)
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['msDS-ReplLinkFailures']) {
+        If ($null -ne $rsp.Entries[0].Attributes['msDS-ReplLinkFailures']) {
             $data.'msDS-ReplLinkFailures'=@()
             foreach($val in $rsp.Entries[0].Attributes['msDS-ReplLinkFailures'].GetValues([string])) {
                 $data.'msDS-ReplLinkFailures'+=[xml]$Val.SubString(0,$Val.Length-2)
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['msDS-ReplPendingOps']) {
+        If ($null -ne $rsp.Entries[0].Attributes['msDS-ReplPendingOps']) {
             $data.'msDS-ReplPendingOps'=@()
             foreach($val in $rsp.Entries[0].Attributes['msDS-ReplPendingOps'].GetValues([string])) {
                 $data.'msDS-ReplPendingOps'+=[xml]$Val.SubString(0,$Val.Length-2)
             }
         }
-        if($null -ne $rsp.Entries[0].Attributes['dsaVersionString']) {
+        If ($null -ne $rsp.Entries[0].Attributes['dsaVersionString']) {
             $data.dsaVersionString=$rsp.Entries[0].Attributes['dsaVersionString'].GetValues([string])[0]
         }
-        if($null -ne $rsp.Entries[0].Attributes['serviceAccountInfo']) {
+        If ($null -ne $rsp.Entries[0].Attributes['serviceAccountInfo']) {
             $data.serviceAccountInfo=$rsp.Entries[0].Attributes['serviceAccountInfo'].GetValues([string])
         }
-        if($null -ne $rsp.Entries[0].Attributes['LDAPPoliciesEffective']) {
+        If ($null -ne $rsp.Entries[0].Attributes['LDAPPoliciesEffective']) {
             $data.LDAPPoliciesEffective=@{}
             foreach($val in $rsp.Entries[0].Attributes['LDAPPoliciesEffective'].GetValues([string]))
             {
                 $vals=$val.Split(':')
-                if($vals.Length -gt 1) {
+                If ($vals.Length -gt 1) {
                     $data.LDAPPoliciesEffective[$vals[0]]=$vals[1]
                 }
             }
@@ -1345,7 +1346,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 
     Begin
     {
-        if($null -eq $script:ConnectionParams)
+        If ($null -eq $script:ConnectionParams)
         {
             $script:ConnectionParams=@{}
         }
@@ -1356,7 +1357,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         $FullyQualifiedDomainName=$false;
         [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]$di=new-object System.DirectoryServices.Protocols.LdapDirectoryIdentifier($LdapServer, $Port, $FullyQualifiedDomainName, $ConnectionLess)
 
-        if($null -ne $Credential)
+        If ($null -ne $Credential)
         {
             $LdapConnection=new-object System.DirectoryServices.Protocols.LdapConnection($di, $Credential.GetNetworkCredential())
         }
@@ -1370,7 +1371,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         #store connection params for each server in global variable, so as it is reachable from callback scriptblocks
         $connectionParams=@{}
         foreach($server in $LdapServer) {$script:ConnectionParams[$server]=$connectionParams}
-        if($CertificateValidationFlags -ne 'NoFlag')
+        If ($CertificateValidationFlags -ne 'NoFlag')
         {
             $connectionParams['ServerCertificateValidationFlags'] = $CertificateValidationFlags
             #server certificate validation callback
@@ -1382,10 +1383,10 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 [System.Security.Cryptography.X509Certificates.X509Chain] $chain = new-object System.Security.Cryptography.X509Certificates.X509Chain
                 foreach($server in $LdapConnection.Directory.Servers)
                 {
-                    if($server -in $script:ConnectionParams.Keys)
+                    If ($server -in $script:ConnectionParams.Keys)
                     {
                         $connectionParam=$script:ConnectionParams[$server]
-                        if($null -ne $connectionParam['ServerCertificateValidationFlags'])
+                        If ($null -ne $connectionParam['ServerCertificateValidationFlags'])
                         {
                             $chain.ChainPolicy.VerificationFlags = $connectionParam['ServerCertificateValidationFlags']
                             break;
@@ -1397,7 +1398,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
             }
         }
         
-        if($null -ne $ClientCertificate)
+        If ($null -ne $ClientCertificate)
         {
             $connectionParams['ClientCertificate'] = $ClientCertificate
             #client certificate retrieval callback
@@ -1409,10 +1410,10 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $clientCert = $null
                 foreach($server in $LdapConnection.Directory.Servers)
                 {
-                    if($server -in $script:ConnectionParams.Keys)
+                    If ($server -in $script:ConnectionParams.Keys)
                     {
                         $connectionParam=$script:ConnectionParams[$server]
-                        if($null -ne $connectionParam['ClientCertificate'])
+                        If ($null -ne $connectionParam['ClientCertificate'])
                         {
                             $clientCert = $connectionParam['ClientCertificate']
                             break;
@@ -1423,7 +1424,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
             }
         }
 
-        if ($null -ne $AuthType) {
+        If ($null -ne $AuthType) {
             $LdapConnection.AuthType = $AuthType
         }
 
@@ -1444,12 +1445,12 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 break
             }
         }
-        if($Timeout -ne [TimeSpan]::Zero)
+        If ($Timeout -ne [TimeSpan]::Zero)
         {
             $LdapConnection.Timeout = $Timeout
         }
 
-        if($FastConcurrentBind) {
+        If ($FastConcurrentBind) {
             $LdapConnection.SessionOptions.FastConcurrentBind()
         }
         $script:LdapConnection = $LdapConnection
@@ -1539,7 +1540,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 
     Process
     {
-        if([string]::IsNullOrEmpty($Object.DistinguishedName)) {
+        If ([string]::IsNullOrEmpty($Object.DistinguishedName)) {
             throw (new-object System.ArgumentException("Input object missing DistinguishedName property"))
         }
         [System.DirectoryServices.Protocols.AddRequest]$rqAdd=new-object System.DirectoryServices.Protocols.AddRequest
@@ -1549,14 +1550,14 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         foreach($ctrl in $AdditionalControls) {$rqAdd.Controls.Add($ctrl) | Out-Null}
 
         foreach($prop in (Get-Member -InputObject $Object -MemberType NoteProperty)) {
-            if($prop.Name -eq "distinguishedName") {continue}
-            if($IgnoredProps -contains $prop.Name) {continue}
+            If ($prop.Name -eq "distinguishedName") {continue}
+            If ($IgnoredProps -contains $prop.Name) {continue}
             [System.DirectoryServices.Protocols.DirectoryAttribute]$propAdd=new-object System.DirectoryServices.Protocols.DirectoryAttribute
             $transform = $script:RegisteredTransforms[$prop.Name]
             $binaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($prop.Name -in $BinaryProps)
             $propAdd.Name=$prop.Name
             
-            if($null -ne $transform -and $null -ne $transform.OnSave) {
+            If ($null -ne $transform -and $null -ne $transform.OnSave) {
                 #transform defined -> transform to form accepted by directory
                 $attrVal = @(& $transform.OnSave -Values $Object.($prop.Name))
             }
@@ -1565,9 +1566,9 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $attrVal = $Object.($prop.Name)
             }
 
-            if($null -ne $attrVal)  #ignore empty props
+            If ($null -ne $attrVal)  #ignore empty props
             {
-                if($binaryInput) {
+                If ($binaryInput) {
                     foreach($val in $attrVal) {
                         $propAdd.Add([byte[]]$val) | Out-Null
                     }
@@ -1575,13 +1576,13 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                     $propAdd.AddRange([string[]]($attrVal))
                 }
 
-                if($propAdd.Count -gt 0) {
+                If ($propAdd.Count -gt 0) {
                     $rqAdd.Attributes.Add($propAdd) | Out-Null
                 }
             }
         }
-        if($rqAdd.Attributes.Count -gt 0) {
-            if($Timeout -ne [TimeSpan]::Zero)
+        If ($rqAdd.Attributes.Count -gt 0) {
+            If ($Timeout -ne [TimeSpan]::Zero)
             {
                 $LdapConnection.SendRequest($rqAdd, $Timeout) -as [System.DirectoryServices.Protocols.AddResponse] | Out-Null
             }
@@ -1589,7 +1590,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $LdapConnection.SendRequest($rqAdd) -as [System.DirectoryServices.Protocols.AddResponse] | Out-Null
             }
         }
-        if($Passthrough)
+        If ($Passthrough)
         {
             $Object
         }
@@ -1715,7 +1716,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 
     Process
     {
-        if([string]::IsNullOrEmpty($Object.DistinguishedName)) {
+        If ([string]::IsNullOrEmpty($Object.DistinguishedName)) {
             throw (new-object System.ArgumentException("Input object missing DistinguishedName property"))
         }
 
@@ -1729,15 +1730,15 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
         foreach($ctrl in $AdditionalControls) {$rqMod.Controls.Add($ctrl) | Out-Null}
 
         foreach($prop in (Get-Member -InputObject $Object -MemberType NoteProperty)) {
-            if($prop.Name -eq "distinguishedName") {continue} #Dn is always ignored
-            if($IgnoredProps -contains $prop.Name) {continue}
-            if(($IncludedProps.Count -gt 0) -and ($IncludedProps -notcontains $prop.Name)) {continue}
+            If ($prop.Name -eq "distinguishedName") {continue} #Dn is always ignored
+            If ($IgnoredProps -contains $prop.Name) {continue}
+            If (($IncludedProps.Count -gt 0) -and ($IncludedProps -notcontains $prop.Name)) {continue}
             [System.DirectoryServices.Protocols.DirectoryAttribute]$propMod=new-object System.DirectoryServices.Protocols.DirectoryAttributeModification
             $transform = $script:RegisteredTransforms[$prop.Name]
             $binaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($prop.Name -in $BinaryProps)
             $propMod.Name=$prop.Name
 
-            if($null -ne $transform -and $null -ne $transform.OnSave) {
+            If ($null -ne $transform -and $null -ne $transform.OnSave) {
                 #transform defined -> transform to form accepted by directory
                 $attrVal = @(& $transform.OnSave -Values $Object.($prop.Name))
             }
@@ -1746,11 +1747,11 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $attrVal = $Object.($prop.Name)
             }
 
-            if($null -ne $attrVal) {
+            If ($null -ne $attrVal) {
                 #we're modifying property
-                if($attrVal.Count -gt 0) {
+                If ($attrVal.Count -gt 0) {
                     $propMod.Operation=$Mode
-                    if($binaryInput)  {
+                    If ($binaryInput)  {
                         foreach($val in $attrVal) {
                             $propMod.Add([byte[]]$val) | Out-Null
                         }
@@ -1765,8 +1766,8 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 $rqMod.Modifications.Add($propMod) | Out-Null
             }
         }
-        if($rqMod.Modifications.Count -gt 0) {
-            if($Timeout -ne [TimeSpan]::Zero)
+        If ($rqMod.Modifications.Count -gt 0) {
+            If ($Timeout -ne [TimeSpan]::Zero)
             {
                 $LdapConnection.SendRequest($rqMod, $Timeout) -as [System.DirectoryServices.Protocols.ModifyResponse] | Out-Null
             }
@@ -1776,7 +1777,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
             }
         }
         #if requested, pass the objeect to pipeline for further processing
-        if($Passthrough) {$Object}
+        If ($Passthrough) {$Object}
     }
 }
 
@@ -1853,7 +1854,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
             }
             default
             {
-                if($null -ne $Object.distinguishedName)
+                If ($null -ne $Object.distinguishedName)
                 {
                     $rqDel.DistinguishedName=$Object.distinguishedName
                 }
@@ -1863,7 +1864,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
                 }
             }
         }
-        if($UseTreeDelete) {
+        If ($UseTreeDelete) {
             $rqDel.Controls.Add((new-object System.DirectoryServices.Protocols.TreeDeleteControl)) | Out-Null
         }
         $LdapConnection.SendRequest($rqDel) -as [System.DirectoryServices.Protocols.DeleteResponse] | Out-Null
@@ -1952,7 +1953,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
             }
             default
             {
-                if($Object.distinguishedName)
+                If ($Object.distinguishedName)
                 {
                     $rqModDN.DistinguishedName=$Object.distinguishedName
                 }
@@ -1963,7 +1964,7 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
             }
         }
         $rqModDn.NewName = $NewName
-        if(-not [string]::IsNullOrEmpty($NewParent)) {$rqModDN.NewParentDistinguishedName = $NewParent}
+        If (-not [string]::IsNullOrEmpty($NewParent)) {$rqModDN.NewParentDistinguishedName = $NewParent}
         $rqModDN.DeleteOldRdn = (-not $KeepOldRdn)
         $LdapConnection.SendRequest($rqModDN) -as [System.DirectoryServices.Protocols.ModifyDNResponse] | Out-Null
     }
@@ -2049,7 +2050,7 @@ Template for creation of new transforms: https://github.com/jformacek/S.DS.P/blo
             }
         }
 
-        if(-not (Test-Path -Path "$PSScriptRoot\Transforms\$Name.ps1") )
+        If (-not (Test-Path -Path "$PSScriptRoot\Transforms\$Name.ps1") )
         {
             throw new-object System.ArgumentException "Transform $Name not found"
         }
@@ -2058,13 +2059,13 @@ Template for creation of new transforms: https://github.com/jformacek/S.DS.P/blo
         switch($PSCmdlet.ParameterSetName)
         {
             'Name' {
-                if([string]::IsNullOrEmpty($AttributeName))
+                If ([string]::IsNullOrEmpty($AttributeName))
                 {
                     $attribs = $SupportedAttributes
                 }
                 else
                 {
-                    if($supportedAttributes -contains $AttributeName)
+                    If ($supportedAttributes -contains $AttributeName)
                     {
                         $attribs = @($AttributeName)
                     }
@@ -2138,7 +2139,7 @@ More about attribute transforms and how to create them: https://github.com/jform
 
     Process
     {
-        if($script:RegisteredTransforms.Keys -contains $AttributeName)
+        If ($script:RegisteredTransforms.Keys -contains $AttributeName)
         {
             $script:RegisteredTransforms.Remove($AttributeName)
         }
@@ -2166,7 +2167,7 @@ More about attribute transforms and how to create them: https://github.com/jform
             #Lists all tranforms available
         $ListAvailable
     )
-    if($ListAvailable)
+    If ($ListAvailable)
     {
         $TransformList = Get-ChildItem -Path "$PSScriptRoot\Transforms\*.ps1" -ErrorAction SilentlyContinue
         foreach($transformFile in $TransformList)
@@ -2274,7 +2275,7 @@ param()
 
     process
     {
-        if($null -ne $script:DirSyncCookie)
+        If ($null -ne $script:DirSyncCookie)
         {
             [Convert]::ToBase64String($script:DirSyncCookie)
         }
@@ -2336,7 +2337,7 @@ public static class Flattener
 {
     public static System.Object FlattenArray(System.Object[] arr)
     {
-        if(arr==null) return null;
+        If (arr==null) return null;
         switch(arr.Length)
         {
             case 0:
@@ -2351,7 +2352,7 @@ public static class Flattener
 '@
 
 $referencedAssemblies=@()
-if($PSVersionTable.PSEdition -eq 'Core') {$referencedAssemblies+='System.Security.Principal.Windows'}
+If ($PSVersionTable.PSEdition -eq 'Core') {$referencedAssemblies+='System.Security.Principal.Windows'}
 Add-Type @'
 public class NamingContext
 {
@@ -2363,7 +2364,7 @@ public class NamingContext
     {
         NamingContext retVal = new NamingContext();
         var parts = ctxDef.Split(';');
-        if(parts.Length == 1)
+        If (parts.Length == 1)
         {
             retVal.distinguishedName = parts[0];
         }
@@ -2371,7 +2372,7 @@ public class NamingContext
         {
             foreach(string part in parts)
             {
-                if(part.StartsWith("<GUID="))
+                If (part.StartsWith("<GUID="))
                 {
                     try
                     {
@@ -2383,7 +2384,7 @@ public class NamingContext
                     }
                     continue;
                 }
-                if(part.StartsWith("<SID="))
+                If (part.StartsWith("<SID="))
                 {
                     try
                     {
@@ -2417,7 +2418,7 @@ Function EnsureLdapConnection
 
     process
     {
-        if($null -eq $LdapConnection)
+        If ($null -eq $LdapConnection)
         {
             throw (new-object System.ArgumentException("LdapConnection parameter not provided and not found in session variable. Call Get-LdapConnection first"))
         }
@@ -2458,7 +2459,7 @@ function GetTargetAttr
     {
         $targetAttr = $attr
         $m = [System.Text.RegularExpressions.Regex]::Match($attr,';range=.+');  #this is to skip range hints provided by DC
-        if($m.Success)
+        If ($m.Success)
         {
             $targetAttr = $($attr.Substring(0,$m.Index))
         }
@@ -2501,7 +2502,7 @@ function GetResultsDirectlyInternal
     process
     {
         $pagedRqc=$rq.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.PageResultRequestControl]}
-        if($NoAttributes) {
+        If ($NoAttributes) {
             $rq.Attributes.Add('1.1') | Out-Null
         } else {
             $rq.Attributes.AddRange($propertiesToLoad) | Out-Null
@@ -2510,7 +2511,7 @@ function GetResultsDirectlyInternal
         {
             try
             {
-                if($Timeout -ne [timespan]::Zero)
+                If ($Timeout -ne [timespan]::Zero)
                 {
                     $rsp = $conn.SendRequest($rq, $Timeout) -as [System.DirectoryServices.Protocols.SearchResponse]
                 }
@@ -2521,7 +2522,7 @@ function GetResultsDirectlyInternal
             }
             catch [System.DirectoryServices.Protocols.DirectoryOperationException]
             {
-                if($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded')
+                If ($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded')
                 {
                     #size limit exceeded
                     $rsp = $_.Exception.Response
@@ -2538,13 +2539,13 @@ function GetResultsDirectlyInternal
                 
                 foreach($attrName in $sr.Attributes.AttributeNames) {
                     $targetAttrName = GetTargetAttr -attr $attrName
-                    if($targetAttrName -ne $attrName)
+                    If ($targetAttrName -ne $attrName)
                     {
                         Write-Warning "Value of attribute $targetAttrName not completely retrieved as it exceeds query policy. Use ranged retrieval. Range hint: $attrName"
                     }
                     else
                     {
-                        if($data[$attrName].Count -gt 0)
+                        If ($data[$attrName].Count -gt 0)
                         {
                             #we may have already loaded partial results from ranged hint
                             continue
@@ -2553,15 +2554,15 @@ function GetResultsDirectlyInternal
                     
                     $transform = $script:RegisteredTransforms[$targetAttrName]
                     $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($targetAttrName -in $BinaryProperties)
-                    if($null -ne $transform -and $null -ne $transform.OnLoad)
+                    If ($null -ne $transform -and $null -ne $transform.OnLoad)
                     {
-                        if($BinaryInput -eq $true) {
+                        If ($BinaryInput -eq $true) {
                             $data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([byte[]])))
                         } else {
                             $data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([string])))
                         }
                     } else {
-                        if($BinaryInput -eq $true) {
+                        If ($BinaryInput -eq $true) {
                             $data[$targetAttrName] = $sr.Attributes[$attrName].GetValues([byte[]])
                         } else {
                             $data[$targetAttrName] = $sr.Attributes[$attrName].GetValues([string])
@@ -2569,7 +2570,7 @@ function GetResultsDirectlyInternal
                     }
                 }
                 
-                if($data['distinguishedName'].Count -eq 0) {
+                If ($data['distinguishedName'].Count -eq 0) {
                     #dn has to be present on all objects
                     #having DN processed at the end gives chance to possible transforms on this attribute
                     $data['distinguishedName']=$sr.DistinguishedName
@@ -2578,7 +2579,7 @@ function GetResultsDirectlyInternal
             }
             #the response may contain paged search response. If so, we will need a cookie from it
             [System.DirectoryServices.Protocols.PageResultResponseControl] $prrc=$rsp.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.PageResultResponseControl]}
-            if($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
+            If ($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
                 #pass the search cookie back to server in next paged request
                 $pagedRqc.Cookie = $prrc.Cookie;
             } else {
@@ -2625,11 +2626,11 @@ function GetResultsDirSyncInternal
     {
         $DirSyncRqc= new-object System.DirectoryServices.Protocols.DirSyncRequestControl(,$script:DirSyncCookie)
         $DirSyncRqc.Option = [System.DirectoryServices.Protocols.DirectorySynchronizationOptions]::ParentsFirst
-        if($ObjectSecurity)
+        If ($ObjectSecurity)
         {
             $DirSyncRqc.Option = $DirSyncRqc.Option -bor [System.DirectoryServices.Protocols.DirectorySynchronizationOptions]::ObjectSecurity
         }
-        if($Incremental)
+        If ($Incremental)
         {
             $DirSyncRqc.Option = $DirSyncRqc.Option -bor [System.DirectoryServices.Protocols.DirectorySynchronizationOptions]::IncrementalValues
         }
@@ -2640,7 +2641,7 @@ function GetResultsDirSyncInternal
         {
             try
             {
-                if($Timeout -ne [timespan]::Zero)
+                If ($Timeout -ne [timespan]::Zero)
                 {
                     $rsp = $conn.SendRequest($rq, $Timeout) -as [System.DirectoryServices.Protocols.SearchResponse]
                 }
@@ -2661,9 +2662,9 @@ function GetResultsDirSyncInternal
                 
                 foreach($attrName in $sr.Attributes.AttributeNames) {
                     $targetAttrName = GetTargetAttr -attr $attrName
-                    if($attrName -ne $targetAttrName)
+                    If ($attrName -ne $targetAttrName)
                     {
-                        if($null -eq $data[$targetAttrName])
+                        If ($null -eq $data[$targetAttrName])
                         {
                             $data[$targetAttrName] = [PSCustomObject]@{
                                 Add=@()
@@ -2672,7 +2673,7 @@ function GetResultsDirSyncInternal
                         }
                         #we have multival prop chnage --> need special handling
                         #Windows AD/LDS server returns attribute name as '<attr>;range=1-1' for added values and '<attr>;range=0-0' for removed values on forward-linked attributes
-                        if($attrName -like '*;range=1-1')
+                        If ($attrName -like '*;range=1-1')
                         {
                             $attributeContainer = {param($val) $data[$targetAttrName].Add=$val}
                         }
@@ -2687,15 +2688,15 @@ function GetResultsDirSyncInternal
                     
                     $transform = $script:RegisteredTransforms[$targetAttrName]
                     $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($targetAttrName -in $BinaryProperties)
-                    if($null -ne $transform -and $null -ne $transform.OnLoad)
+                    If ($null -ne $transform -and $null -ne $transform.OnLoad)
                     {
-                        if($BinaryInput -eq $true) {
+                        If ($BinaryInput -eq $true) {
                             &$attributeContainer (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([byte[]])))
                         } else {
                             &$attributeContainer (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([string])))
                         }
                     } else {
-                        if($BinaryInput -eq $true) {
+                        If ($BinaryInput -eq $true) {
                             &$attributeContainer $sr.Attributes[$attrName].GetValues([byte[]])
                         } else {
                             &$attributeContainer $sr.Attributes[$attrName].GetValues([string])
@@ -2703,7 +2704,7 @@ function GetResultsDirSyncInternal
                     }
                 }
                 
-                if($data['distinguishedName'].Count -eq 0) {
+                If ($data['distinguishedName'].Count -eq 0) {
                     #dn has to be present on all objects
                     #having DN processed at the end gives chance to possible transforms on this attribute
                     $data['distinguishedName']=$sr.DistinguishedName
@@ -2712,11 +2713,11 @@ function GetResultsDirSyncInternal
             }
             #the response may contain dirsync response. If so, we will need a cookie from it
             [System.DirectoryServices.Protocols.DirSyncResponseControl] $dsrc=$rsp.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.DirSyncResponseControl]}
-            if($null -ne $dsrc -and $dsrc.Cookie.Length -ne 0 -and $null -ne $DirSyncRqc) {
+            If ($null -ne $dsrc -and $dsrc.Cookie.Length -ne 0 -and $null -ne $DirSyncRqc) {
                 #pass the search cookie back to server in next paged request
                 $DirSyncRqc.Cookie = $dsrc.Cookie;
                 $script:DirSyncCookie = $dsrc.Cookie
-                if(-not $dsrc.MoreData)
+                If (-not $dsrc.MoreData)
                 {
                     break;
                 }
@@ -2780,7 +2781,7 @@ function GetResultsIndirectlyInternal
         {
             try
             {
-                if($Timeout -ne [timespan]::Zero)
+                If ($Timeout -ne [timespan]::Zero)
                 {
                     $rsp = $conn.SendRequest($rq, $Timeout) -as [System.DirectoryServices.Protocols.SearchResponse]
                 }
@@ -2791,7 +2792,7 @@ function GetResultsIndirectlyInternal
             }
             catch [System.DirectoryServices.Protocols.DirectoryOperationException]
             {
-                if($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded')
+                If ($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded')
                 {
                     #size limit exceeded
                     $rsp = $_.Exception.Response
@@ -2818,13 +2819,13 @@ function GetResultsIndirectlyInternal
                 foreach ($srAttr in $rspAttr.Entries) {
                     foreach($attrName in $srAttr.Attributes.AttributeNames) {
                         $targetAttrName = GetTargetAttr -attr $attrName
-                        if($targetAttrName -ne $attrName)
+                        If ($targetAttrName -ne $attrName)
                         {
                             Write-Warning "Value of attribute $targetAttrName not completely retrieved as it exceeds query policy. Use ranged retrieval. Range hint: $attrName"
                         }
                         else
                         {
-                            if($data[$attrName].Count -gt 0)
+                            If ($data[$attrName].Count -gt 0)
                             {
                                 #we may have already loaded partial results from ranged hint
                                 continue
@@ -2834,15 +2835,15 @@ function GetResultsIndirectlyInternal
                         $transform = $script:RegisteredTransforms[$targetAttrName]
                         $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($attrName -in $BinaryProperties)
                         #protecting against LDAP servers who don't understand '1.1' prop
-                        if($null -ne $transform -and $null -ne $transform.OnLoad)
+                        If ($null -ne $transform -and $null -ne $transform.OnLoad)
                         {
-                            if($BinaryInput -eq $true) {
+                            If ($BinaryInput -eq $true) {
                                 $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([byte[]])))
                             } else {
                                 $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([string])))
                             }
                         } else {
-                            if($BinaryInput -eq $true) {
+                            If ($BinaryInput -eq $true) {
                                 $data[$targetAttrName] = $srAttr.Attributes[$attrName].GetValues([byte[]])
                             } else {
                                 $data[$targetAttrName] = $srAttr.Attributes[$attrName].GetValues([string])
@@ -2850,7 +2851,7 @@ function GetResultsIndirectlyInternal
                         }
                     }
                 }
-                if($data['distinguishedName'].Count -eq 0) {
+                If ($data['distinguishedName'].Count -eq 0) {
                     #dn has to be present on all objects
                     $data['distinguishedName']=$sr.DistinguishedName
                 }
@@ -2858,7 +2859,7 @@ function GetResultsIndirectlyInternal
             }
             #the response may contain paged search response. If so, we will need a cookie from it
             [System.DirectoryServices.Protocols.PageResultResponseControl] $prrc=$rsp.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.PageResultResponseControl]}
-            if($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
+            If ($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
                 #pass the search cookie back to server in next paged request
                 $pagedRqc.Cookie = $prrc.Cookie;
             } else {
@@ -2925,7 +2926,7 @@ function GetResultsIndirectlyRangedInternal
         {
             try
             {
-                if($Timeout -ne [timespan]::Zero)
+                If ($Timeout -ne [timespan]::Zero)
                 {
                     $rsp = $conn.SendRequest($rq, $Timeout) -as [System.DirectoryServices.Protocols.SearchResponse]
                 }
@@ -2936,7 +2937,7 @@ function GetResultsIndirectlyRangedInternal
             }
             catch [System.DirectoryServices.Protocols.DirectoryOperationException]
             {
-                if($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded')
+                If ($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded')
                 {
                     #size limit exceeded
                     $rsp = $_.Exception.Response
@@ -2973,12 +2974,12 @@ function GetResultsIndirectlyRangedInternal
                             #LDAP server changes upper bound to * on last chunk
                             $returnedAttrName=$($srAttr.Attributes.AttributeNames)
                             #load binary properties as byte stream, other properties as strings
-                            if($BinaryInput) {
+                            If ($BinaryInput) {
                                 $data[$attrName]+=$srAttr.Attributes[$returnedAttrName].GetValues([byte[]])
                             } else {
                                 $data[$attrName] += $srAttr.Attributes[$returnedAttrName].GetValues([string])
                             }
-                            if($returnedAttrName.EndsWith("-*") -or $returnedAttrName -eq $attrName) {
+                            If ($returnedAttrName.EndsWith("-*") -or $returnedAttrName -eq $attrName) {
                                 #last chunk arrived
                                 $lastRange = $true
                             }
@@ -2986,12 +2987,12 @@ function GetResultsIndirectlyRangedInternal
                     }
 
                     #perform transform if registered
-                    if($null -ne $transform -and $null -ne $transform.OnLoad)
+                    If ($null -ne $transform -and $null -ne $transform.OnLoad)
                     {
                         $data[$attrName] = (& $transform.OnLoad -Values $data[$attrName])
                     }
                 }
-                if($data['distinguishedName'].Count -eq 0) {
+                If ($data['distinguishedName'].Count -eq 0) {
                     #dn has to be present on all objects
                     $data['distinguishedName']=$sr.DistinguishedName
                 }
@@ -2999,7 +3000,7 @@ function GetResultsIndirectlyRangedInternal
             }
             #the response may contain paged search response. If so, we will need a cookie from it
             [System.DirectoryServices.Protocols.PageResultResponseControl] $prrc=$rsp.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.PageResultResponseControl]}
-            if($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
+            If ($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
                 #pass the search cookie back to server in next paged request
                 $pagedRqc.Cookie = $prrc.Cookie;
             } else {
@@ -3127,25 +3128,30 @@ Function loadPoSHModules($poshModule, $ignoreRemote) {
 		} Else {
 			Logging "PoSH Module '$poshModule' Is Not Available To Load..." "ERROR" $ignoreRemote
 			Logging "The PoSH Module '$poshModule' Is Required For This Script To Work..." "REMARK" $ignoreRemote
-			$confirmInstallPoshModuleYESNO = $null
-			$confirmInstallPoshModuleYESNO = Read-Host "Would You Like To Install The PoSH Module '$poshModule' NOW? [Yes|No]"
-			If ($confirmInstallPoshModuleYESNO.ToUpper() -eq "YES" -Or $confirmInstallPoshModuleYESNO.ToUpper() -eq "Y") {
-				If ($poshModule -eq "GroupPolicy") {
-					Logging "Installing The Windows Feature 'GPMC' For The PoSH Module '$poshModule'..." "REMARK" $ignoreRemote
-					Add-WindowsFeature -Name "GPMC" -IncludeAllSubFeature | Out-Null
-				}
-				If (@(Get-Module -ListAvailable | Where-Object{$_.Name -eq $poshModule}).count -ne 0) {
-					Import-Module $poshModule
-					Logging "PoSH Module '$poshModule' Has Been Loaded..." "SUCCESS" $ignoreRemote
-					$retValue = "HasBeenLoaded"
+			If ($runAsSystem.IsPresent -eq $false){
+				$confirmInstallPoshModuleYESNO = $null
+				$confirmInstallPoshModuleYESNO = Read-Host "Would You Like To Install The PoSH Module '$poshModule' NOW? [Yes|No]"
+				If ($confirmInstallPoshModuleYESNO.ToUpper() -eq "YES" -Or $confirmInstallPoshModuleYESNO.ToUpper() -eq "Y") {
+					If ($poshModule -eq "GroupPolicy") {
+						Logging "Installing The Windows Feature 'GPMC' For The PoSH Module '$poshModule'..." "REMARK" $ignoreRemote
+						Add-WindowsFeature -Name "GPMC" -IncludeAllSubFeature | Out-Null
+					}
+					If (@(Get-Module -ListAvailable | Where-Object{$_.Name -eq $poshModule}).count -ne 0) {
+						Import-Module $poshModule
+						Logging "PoSH Module '$poshModule' Has Been Loaded..." "SUCCESS" $ignoreRemote
+						$retValue = "HasBeenLoaded"
+					} Else {
+						Logging "Aborting Script..." "ERROR" $ignoreRemote
+						$retValue = "NotAvailable"
+					}
 				} Else {
 					Logging "Aborting Script..." "ERROR" $ignoreRemote
 					$retValue = "NotAvailable"
 				}
 			} Else {
-				Logging "Aborting Script..." "ERROR" $ignoreRemote
-				$retValue = "NotAvailable"
-			}
+					Logging "Aborting Script..." "ERROR" $ignoreRemote
+					$retValue = "NotAvailable"
+				}
 		}
 	} Else {
 		Logging "PoSH Module '$poshModule' Already Loaded..." "SUCCESS" $ignoreRemote
@@ -5261,6 +5267,9 @@ Add-Type -Path $(($sdspDLLPath | Sort-Object -Property ProductVersion)[0].FullNa
 Logging "------------------------------------------------------------------------------------------------------------------------------------------------------" "HEADER"
 Logging "INFORMATION REGARDING KRBTGT ACCOUNTS AND PASSWORD RESETS..." "HEADER"
 Logging ""
+
+If ($runAsSystem.IsPresent) { $noInfo = $true }
+
 If ($noInfo) {
 	Logging "Do you want to read information about the script, its functions, its behavior and the impact? [YES | NO]: NO" "ACTION"
 	$yesOrNo = "NO"
@@ -5602,8 +5611,15 @@ Switch ($modeOfOperation) {
 	Default {$modeOfOperationNr = $null}
 }
 If ($null -eq $modeOfOperationNr) {
-	Logging "Please specify the mode of operation: " "ACTION-NO-NEW-LINE"
-	$modeOfOperationNr = Read-Host
+	If ($runAsSystem.IsPresent -eq $false){
+		Logging "Please specify the mode of operation: " "ACTION-NO-NEW-LINE"
+		$modeOfOperationNr = Read-Host
+	}
+	Else {
+		Logging "Mode of operation not specified" "ERROR"
+		Logging "Exiting..."
+		EXIT
+	}
 } Else {
 	Logging "Please specify the mode of operation: $modeOfOperationNr" "ACTION"
 }
@@ -5680,8 +5696,11 @@ Logging ""
 
 # Ask Which AD Forest To Target
 If ($targetedADforestFQDN -eq "") {
-	Logging "For the AD forest to be targeted, please provide the FQDN or press [ENTER] for the current AD forest: " "ACTION-NO-NEW-LINE"
-	$targetedADforestFQDN = Read-Host
+	If ($runAsSystem.IsPresent -eq $false) {
+		Logging "For the AD forest to be targeted, please provide the FQDN or press [ENTER] for the current AD forest: " "ACTION-NO-NEW-LINE"
+		$targetedADforestFQDN = Read-Host
+	}
+	Else {} # leave empty to skip the prompt
 } Else {
 	Logging "For the AD forest to be targeted, please provide the FQDN or press [ENTER] for the current AD forest: $targetedADforestFQDN" "ACTION"
 }
@@ -6087,61 +6106,101 @@ $targetedDomainObjectSID = $targetedADdomainData.DomainSID
 
 # If The AD Forest Is Local, Then We Can Test For Role Membership Of Either Domain Admins Or Enterprise Admins.
 If ($localADforest -eq $true) {
-	# Validate The User Account Running This Script Is A Member Of The Domain Admins Group Of The Targeted AD Domain
-	$domainAdminRID = "512"
-	$domainAdminRole = (New-Object System.Security.Principal.SecurityIdentifier($targetedDomainObjectSID + "-" + $domainAdminRID)).Translate([System.Security.Principal.NTAccount]).Value
-	$userIsDomainAdmin = testAdminRole $domainAdminRole
-	If (!$userIsDomainAdmin) {
-		# The User Account Running This Script Has Been Validated Not Being A Member Of The Domain Admins Group Of The Targeted AD Domain
-		# Validate The User Account Running This Script Is A Member Of The Enterprise Admins Group Of The AD Forest
-		$forestRootDomainObjectSID = ($tableOfADDomainsInADForest | Where-Object{$_.IsRootDomain -eq $true}).DomainSID
-		$enterpriseAdminRID = "519"
-		$enterpriseAdminRole = (New-Object System.Security.Principal.SecurityIdentifier($forestRootDomainObjectSID + "-" + $enterpriseAdminRID)).Translate([System.Security.Principal.NTAccount]).Value
-		$userIsEnterpriseAdmin = testAdminRole $enterpriseAdminRole
-		If (!$userIsEnterpriseAdmin) {
-			# The User Account Running This Script Has Been Validated Not Being A Member Of The Enterprise Admins Group Of The AD Forest
-			Logging "The user account '$adRunningUserAccount' IS NOT running with Domain/Enterprise Administrator equivalent permissions in the AD Domain '$targetedADdomainFQDN'!..." "ERROR"
-			Logging "The user account '$adRunningUserAccount' IS NOT a member of '$domainAdminRole' and NOT a member of '$enterpriseAdminRole'!..." "ERROR"
-			Logging "" "ERROR"
-			Logging "For this script to run successfully, Domain/Enterprise Administrator equivalent permissions are required..." "ERROR"
-			Logging "" "ERROR"
-			Logging "Aborting Script..." "ERROR"
-			Logging "" "ERROR"
+    If ($runAsSystem.IsPresent){
 
-			# Mail The Log File With The Results
+        # Validate If running as SYSTEM
+        If ($adRunningUserAccount -like "NT AUTHORITY\SYSTEM") {
+            # The User Account Running This Script Has Been Validated as SYSTEM
+            Logging "The script is running as SYSTEM" "SUCCESS"
+            Logging "" "SUCCESS"
+            Logging "Continuing Script..." "SUCCESS"
+            Logging "" "SUCCESS"
+        }
+        Else {
+            # Asked for runAsSystem but failed.
+            Logging "The script is NOT running as SYSTEM" "ERROR"
+		    Logging "" "ERROR"
+		    Logging "For this script to run successfully with -runAsSystem flag, it should be run with NT AUTHORITY\SYSTEM account" "ERROR"
+		    Logging "" "ERROR"
+		    Logging "Aborting Script..." "ERROR"
+		    Logging "" "ERROR"
+
+		    # Mail The Log File With The Results
 			If ($argsCount -gt 0 -And $sendMailWithLogFile) {
-				Logging "" "ERROR"
-				Logging "The Log File '$logFilePath' Has Been Mailed To The Following Recipients..." "ERROR"
-				Logging "  - TO: '$mailToRecipient'..." "ERROR"
-				If ($mailCcRecipients.Length -gt 0) {
-					$mailCcRecipients | ForEach-Object {
-						Logging "  - CC: '$($_)'..." "ERROR"
-					}
-				}
-				Logging "" "ERROR"
+			    Logging "" "ERROR"
+			    Logging "The Log File '$logFilePath' Has Been Mailed To The Following Recipients..." "ERROR"
+			    Logging "  - TO: '$mailToRecipient'..." "ERROR"
+			    If ($mailCcRecipients.Length -gt 0) {
+				    $mailCcRecipients | ForEach-Object {
+					    Logging "  - CC: '$($_)'..." "ERROR"
+				    }
+			    }
+			    Logging "" "ERROR"
 
 				$mailAttachments = @()
-				$mailAttachments += $logFilePath
-				sendMailMessage $smtpServer $smtpPort $smtpCredsUserName $smtpCredsPassword $mailFromSender $mailToRecipient $mailCcRecipients $mailPriority $mailSubject $mailBody $mailAttachments $mailSignAndEncryptDllFile $mailSign $mailSignAndEncryptCertLocation $mailSignAndEncryptCertThumbprint $mailSignAndEncryptCertPFXFile $mailSignAndEncryptCertPFXPassword $mailEncrypt $mailEncryptCertLocation $mailEncryptCertThumbprint $mailEncryptCertCERFile
-			}
+			    $mailAttachments += $logFilePath
+			    sendMailMessage $smtpServer $smtpPort $smtpCredsUserName $smtpCredsPassword $mailFromSender $mailToRecipient $mailCcRecipients $mailPriority $mailSubject $mailBody $mailAttachments $mailSignAndEncryptDllFile $mailSign $mailSignAndEncryptCertLocation $mailSignAndEncryptCertThumbprint $mailSignAndEncryptCertPFXFile $mailSignAndEncryptCertPFXPassword $mailEncrypt $mailEncryptCertLocation $mailEncryptCertThumbprint $mailEncryptCertCERFile
+		    }
+		    EXIT
+        }
+    }
+    Else {
+        # Validate The User Account Running This Script Is A Member Of The Domain Admins Group Of The Targeted AD Domain
+	    $domainAdminRID = "512"
+	    $domainAdminRole = (New-Object System.Security.Principal.SecurityIdentifier($targetedDomainObjectSID + "-" + $domainAdminRID)).Translate([System.Security.Principal.NTAccount]).Value
+	    $userIsDomainAdmin = testAdminRole $domainAdminRole
+	    If (!$userIsDomainAdmin) {
+		    # The User Account Running This Script Has Been Validated Not Being A Member Of The Domain Admins Group Of The Targeted AD Domain
+		    # Validate The User Account Running This Script Is A Member Of The Enterprise Admins Group Of The AD Forest
+		    $forestRootDomainObjectSID = ($tableOfADDomainsInADForest | Where-Object{$_.IsRootDomain -eq $true}).DomainSID
+		    $enterpriseAdminRID = "519"
+		    $enterpriseAdminRole = (New-Object System.Security.Principal.SecurityIdentifier($forestRootDomainObjectSID + "-" + $enterpriseAdminRID)).Translate([System.Security.Principal.NTAccount]).Value
+		    $userIsEnterpriseAdmin = testAdminRole $enterpriseAdminRole
+		    If (!$userIsEnterpriseAdmin) {
+			    # The User Account Running This Script Has Been Validated Not Being A Member Of The Enterprise Admins Group Of The AD Forest
+			    Logging "The user account '$adRunningUserAccount' IS NOT running with Domain/Enterprise Administrator equivalent permissions in the AD Domain '$targetedADdomainFQDN'!..." "ERROR"
+			    Logging "The user account '$adRunningUserAccount' IS NOT a member of '$domainAdminRole' and NOT a member of '$enterpriseAdminRole'!..." "ERROR"
+			    Logging "" "ERROR"
+			    Logging "For this script to run successfully, Domain/Enterprise Administrator equivalent permissions are required..." "ERROR"
+			    Logging "" "ERROR"
+			    Logging "Aborting Script..." "ERROR"
+			    Logging "" "ERROR"
 
-			EXIT
-		} Else {
-			# The User Account Running This Script Has Been Validated To Be A Member Of The Enterprise Admins Group Of The AD Forest
-			Logging "The user account '$adRunningUserAccount' is running with Enterprise Administrator equivalent permissions in the AD Domain '$targetedADdomainFQDN'!..." "SUCCESS"
-			Logging "The user account '$adRunningUserAccount' is a member of '$enterpriseAdminRole'!..." "SUCCESS"
-			Logging "" "SUCCESS"
-			Logging "Continuing Script..." "SUCCESS"
-			Logging "" "SUCCESS"
-		}
-	} Else {
-		# The User Account Running This Script Has Been Validated To Be A Member Of The Domain Admins Group Of The Targeted AD Domain
-		Logging "The user account '$adRunningUserAccount' is running with Domain Administrator equivalent permissions in the AD Domain '$targetedADdomainFQDN'!..." "SUCCESS"
-		Logging "The user account '$adRunningUserAccount' is a member of '$domainAdminRole'!..." "SUCCESS"
-		Logging "" "SUCCESS"
-		Logging "Continuing Script..." "SUCCESS"
-		Logging "" "SUCCESS"
-	}
+			    # Mail The Log File With The Results
+			    If ($argsCount -gt 0 -And $sendMailWithLogFile) {
+				    Logging "" "ERROR"
+				    Logging "The Log File '$logFilePath' Has Been Mailed To The Following Recipients..." "ERROR"
+				    Logging "  - TO: '$mailToRecipient'..." "ERROR"
+				    If ($mailCcRecipients.Length -gt 0) {
+					    $mailCcRecipients | ForEach-Object {
+						    Logging "  - CC: '$($_)'..." "ERROR"
+					    }
+				    }
+				    Logging "" "ERROR"
+
+				    $mailAttachments = @()
+				    $mailAttachments += $logFilePath
+				    sendMailMessage $smtpServer $smtpPort $smtpCredsUserName $smtpCredsPassword $mailFromSender $mailToRecipient $mailCcRecipients $mailPriority $mailSubject $mailBody $mailAttachments $mailSignAndEncryptDllFile $mailSign $mailSignAndEncryptCertLocation $mailSignAndEncryptCertThumbprint $mailSignAndEncryptCertPFXFile $mailSignAndEncryptCertPFXPassword $mailEncrypt $mailEncryptCertLocation $mailEncryptCertThumbprint $mailEncryptCertCERFile
+			    }
+
+			    EXIT
+		    } Else {
+			    # The User Account Running This Script Has Been Validated To Be A Member Of The Enterprise Admins Group Of The AD Forest
+			    Logging "The user account '$adRunningUserAccount' is running with Enterprise Administrator equivalent permissions in the AD Domain '$targetedADdomainFQDN'!..." "SUCCESS"
+			    Logging "The user account '$adRunningUserAccount' is a member of '$enterpriseAdminRole'!..." "SUCCESS"
+			    Logging "" "SUCCESS"
+			    Logging "Continuing Script..." "SUCCESS"
+			    Logging "" "SUCCESS"
+		    }
+	    } Else {
+		    # The User Account Running This Script Has Been Validated To Be A Member Of The Domain Admins Group Of The Targeted AD Domain
+		    Logging "The user account '$adRunningUserAccount' is running with Domain Administrator equivalent permissions in the AD Domain '$targetedADdomainFQDN'!..." "SUCCESS"
+		    Logging "The user account '$adRunningUserAccount' is a member of '$domainAdminRole'!..." "SUCCESS"
+		    Logging "" "SUCCESS"
+		    Logging "Continuing Script..." "SUCCESS"
+		    Logging "" "SUCCESS"
+	    }
+    }
 }
 
 # If The AD Forest Is Remote Then We Cannot Test For Role Membership Of The Administrators Group. We Will Test Permissions By Copying The Value Of The Description Field Into The Title Field And Clearing It Again
@@ -6277,6 +6336,37 @@ If ($thisADDomain) {
 	# Retrieve The HostName Of RWDC In The AD Domain That Hosts The PDC FSMO Role
 	#$targetedADdomainRWDCFQDNWithPDCFSMOFQDN = $thisADDomain.PDCEmulator
 	$targetedADdomainRWDCFQDNWithPDCFSMOFQDN = $thisADDomain.PdcRoleOwner.Name
+
+    # If $runAsSystem, it must be localADforest and script must be running on PDC Emulator
+    If ($runAsSystem.IsPresent -And ($localComputerName -NotLike $targetedADdomainRWDCFQDNWithPDCFSMOFQDN -Or $localADforest -eq $false)){
+        # Asked for runAsSystem but the script is not running on PDC Emulator
+            Logging "The script is NOT running as SYSTEM" "ERROR"
+		    Logging "" "ERROR"
+		    Logging "For this script to run successfully with -runAsSystem flag, it should be run on PDCEmulator." "ERROR"
+		    Logging "Local computer: $localComputerName" "ERROR"
+		    Logging "PDC Emulator: $targetedADdomainRWDCFQDNWithPDCFSMOFQDN" "ERROR"
+		    Logging "" "ERROR"
+		    Logging "Aborting Script..." "ERROR"
+		    Logging "" "ERROR"
+
+		    # Mail The Log File With The Results
+			If ($argsCount -gt 0 -And $sendMailWithLogFile) {
+			    Logging "" "ERROR"
+			    Logging "The Log File '$logFilePath' Has Been Mailed To The Following Recipients..." "ERROR"
+			    Logging "  - TO: '$mailToRecipient'..." "ERROR"
+			    If ($mailCcRecipients.Length -gt 0) {
+				    $mailCcRecipients | ForEach-Object {
+					    Logging "  - CC: '$($_)'..." "ERROR"
+				    }
+			    }
+			    Logging "" "ERROR"
+
+				$mailAttachments = @()
+			    $mailAttachments += $logFilePath
+			    sendMailMessage $smtpServer $smtpPort $smtpCredsUserName $smtpCredsPassword $mailFromSender $mailToRecipient $mailCcRecipients $mailPriority $mailSubject $mailBody $mailAttachments $mailSignAndEncryptDllFile $mailSign $mailSignAndEncryptCertLocation $mailSignAndEncryptCertThumbprint $mailSignAndEncryptCertPFXFile $mailSignAndEncryptCertPFXPassword $mailEncrypt $mailEncryptCertLocation $mailEncryptCertThumbprint $mailEncryptCertCERFile
+		    }
+		    EXIT
+    }
 
 	# Retrieve The DSA DN Of RWDC In The AD Domain That Hosts The PDC FSMO Role
 	If ($localADforest -eq $true -Or ($localADforest -eq $false -And !$adminCrds)) {
@@ -7494,8 +7584,14 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 		Default {$targetKrbTgtAccountNr = $null}
 	}
 	If ($null -eq $targetKrbTgtAccountNr) {
-		Logging "Please specify the scope of KrbTgt Account to target: " "ACTION-NO-NEW-LINE"
-		$targetKrbTgtAccountNr = Read-Host
+		If ($runAsSystem.IsPresent -eq $false) {
+			Logging "Please specify the scope of KrbTgt Account to target: " "ACTION-NO-NEW-LINE"
+			$targetKrbTgtAccountNr = Read-Host
+		} Else {
+			Logging "Please specify the scope of KrbTgt Account to target" "ERROR"
+			Logging "Exiting..." "ERROR"
+			EXIT
+		}
 	} Else {
 		Logging "Please specify the scope of KrbTgt Account to target: $targetKrbTgtAccountNr" "ACTION"
 	}
