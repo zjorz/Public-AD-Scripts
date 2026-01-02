@@ -1,12 +1,29 @@
 # SCRIPT: Reset-KrbTgt-Password-For-RWDCs-And-RODCs
 
-## RECOMMENDATION
+## DISCLAIMER
 
-!!! TEST FIRST IN A TEST ENVIRONMENT !!!
+* The script is FREEWARE, you are free to distribute/update it, but always refer to the original source(s) as the location where you got it
+* This script is furnished "AS IS". NO warranty is expressed or implied!
+* I HAVE NOT tested it in every scenario or environment
+* ALWAYS TEST FIRST in lab environment to see if it meets your needs!
+* Use this script at YOUR OWN RISK! YOU ARE RESPONSIBLE FOR ANY OUTCOME/RESULT BY USING THIS SCRIPT!
+* I DO NOT warrant this script to be fit for any purpose, use or environment!
+* I have tried to check everything that needed to be checked, but I DO NOT guarantee the script does not have bugs!
+* I DO NOT guarantee the script will not damage or destroy your system(s), environment or anything else due to improper use or bugs!
+* I DO NOT accept liability in any way when making mistakes, use the script wrong or in any other way where damage is caused to your environment/systems!
+* If you do not accept these terms DO NOT use the script in any way and delete it immediately!
 
 &nbsp;
 
-## AUTHOR/FEEDBACK
+## ORIGINAL AND OFFICIAL SOURCE(S)
+
+* PowerShell Script...:  <https://github.com/zjorz/Public-AD-Scripts/blob/master/Reset-KrbTgt-Password-For-RWDCs-And-RODCs.ps1>
+* XML File............: <https://github.com/zjorz/Public-AD-Scripts/blob/master/Reset-KrbTgt-Password-For-RWDCs-And-RODCs.xml>
+* Blog................: <https://jorgequestforknowledge.wordpress.com/category/active-directory-domain-services-adds/krbtgt-account/>
+
+&nbsp;
+
+## AUTHOR/OWNER/FEEDBACK
 
 * Written By: Jorge de Almeida Pinto [MVP Security / Lead Identity/Security Architect]
 * Re-Written By: N.A.
@@ -20,26 +37,76 @@
 
 &nbsp;
 
-## ORIGINAL AND OFFICIAL SOURCE(S)
+## RECOMMENDATION - TESTING GUIDANCE
 
-* PowerShell Script:  <https://github.com/zjorz/Public-AD-Scripts/blob/master/Reset-KrbTgt-Password-For-RWDCs-And-RODCs.ps1>
-* XML File: <https://github.com/zjorz/Public-AD-Scripts/blob/master/Reset-KrbTgt-Password-For-RWDCs-And-RODCs.xml>
-* Blog: <https://jorgequestforknowledge.wordpress.com/category/active-directory-domain-services-adds/krbtgt-account/>
+!!! TEST FIRST IN A TEST ENVIRONMENT !!!
+
+I can imagine that you want to test this script to get confidence in what it does, how it does it, and of course see it working as if it was for real. Customization of the configuration XML would also be beneficial without impacting the real AD environment.
+
+The script works per AD domain, not per AD forest! Based on the defined scope (global KRBTGT account for all RWDCs, or all individual KRBTGT account of each discovered RODC, or all individual KRBTGT account of specific RODCs), the chosen mode (TEST/BOGUS KrbTgt accounts, or PROD/REAL KrbTgt accounts), the script will do its work in a controlled manner.
 
 &nbsp;
 
-## DISCLAIMER
+PREPARING THE ENVIRONMENT TO TEST WITHOUT ANY IMPACT
+* Start the PowerShell script, and determine which parameters to use:
+  * -noInfo: to NOT see the detailed info at the beginning
+  * -sendMailWithLogFile: to send an e-mail the completion of the script (requires the use and configuration of the Configuration XML file!)
+* Use MODE 8 to create the TEST/BOGUS KrbTgt ACCOUNTS in the AD domain. The script determines which real KRBTGT accounts exists in the AD domain, and after doing that it creates and configures the test KRBTGT accounts. See the documentation in the script for more details. It is recommended to NOT delete these test KRBTGT accounts to be able to simulate correctly. The test KRBTGT accounts are disabled, have very strong passwords, and have no special privileges!
+* Specify the AD Forest
+* Specify the AD Domain
+* Confirm to CONTINUE or STOP for normal operations
 
-* The script is FREEWARE, you are free to distribute/update it, but always refer to the original source(s) as the location where you got it
-* This script is furnished "AS IS". NO warranty is expressed or implied!
-* I HAVE NOT tested it in every scenario or environment
-* ALWAYS TEST FIRST in lab environment to see if it meets your needs!
-* Use this script at YOUR OWN RISK! YOU ARE RESPONSIBLE FOR ANY OUTCOME/RESULT BY USING THIS SCRIPT!
-* I DO NOT warrant this script to be fit for any purpose, use or environment!
-* I have tried to check everything that needed to be checked, but I DO NOT guarantee the script does not have bugs!
-* I DO NOT guarantee the script will not damage or destroy your system(s), environment or anything else due to improper use or bugs!
-* I DO NOT accept liability in any way when making mistakes, use the script wrong or in any other way where damage is caused to your environment/systems!
-* If you do not accept these terms DO NOT use the script in any way and delete it immediately!
+&nbsp;
+
+INTERACTIVE TESTING
+* Start the PowerShell script, and determine which parameters to use:
+  * -noInfo: to NOT see the detailed info at the beginning
+  * -sendMailWithLogFile: to send an e-mail the completion of the script (requires the use and configuration of the Configuration XML file!)
+* Use mode: "4"
+* Specify the AD Forest
+* Specify the AD Domain
+* Select the scope of testing (select either 1, 3 or 4):
+  * 1 - Scope of KrbTgt in use by all RWDCs in the AD Domain
+  * 2 - Scope of KrbTgt in use by specific RODC - Single/Multiple RODC(s) in the AD Domain
+  * 3 - Scope of KrbTgt in use by specific RODC - All RODCs in the AD Domain
+  * 4 - Scope of ANY KrbTgt in use by ANY DC - All RWDCs/RODCs in the AD Domain
+* Confirm to CONTINUE or STOP for normal operations
+* Confirm to CONTINUE, SKIP or STOP if MAJOR IMPACT is DETECTED
+
+&nbsp;
+
+AUTOMATED TESTING (REGULAR)
+* Start the PowerShell script, and determine which parameters to use:
+  * -noInfo: to NOT see the detailed info at the beginning
+  * -sendMailWithLogFile: to send an e-mail the completion of the script (requires the use and configuration of the Configuration XML file!)
+  * Use mode: "4" => use parameter with value -modeOfOperation resetModeKrbTgtTestAccountsResetOnce
+  * Specify the AD Forest => use parameter with value -targetedADforestFQDN COMPANY.COM
+  * Specify the AD Domain => use parameter with value -targetedADdomainFQDN COMPANY.COM
+  * Select the scope of testing (select either 1, 3 or 4):
+    * 1 - Scope of KrbTgt in use by all RWDCs in the AD Domain => use parameter with value -targetKrbTgtAccountScope allRWDCs
+    * 2 - Scope of KrbTgt in use by specific RODC - Single/Multiple RODC(s) in the AD Domain => use parameter with value -targetKrbTgtAccountScope specificRODCs -targetRODCFQDNList RODC1.COMPANY.COM,RODC2.COMPANY.COM
+    * 3 - Scope of KrbTgt in use by specific RODC - All RODCs in the AD Domain => use parameter with value -targetKrbTgtAccountScope allRODCs
+    * 4 - Scope of ANY KrbTgt in use by ANY DC - All RWDCs/RODCs in the AD Domain => use parameter with value -targetKrbTgtAccountScope allRWDCsAndRODCs
+  * Confirm to CONTINUE or STOP for normal operations => use parameter -continueOps
+  * Confirm to CONTINUE, SKIP or STOP if MAJOR IMPACT is DETECTED => NOT SUPPORTED, which means that if this is detected, the script automatically SKIPS the processing of the specific KRBTGT account
+
+&nbsp;
+
+AUTOMATED TESTING (PASSWORD RESET ROUTINE)
+* Start the PowerShell script, and determine which parameters to use:
+  * -noInfo: to NOT see the detailed info at the beginning
+  * -sendMailWithLogFile: to send an e-mail the completion of the script (requires the use and configuration of the Configuration XML file!)
+  * -execResetRoutine: to use the password reset routine (requires the use and configuration of the Configuration XML file!)
+  * Use mode: "4" => use parameter with value -modeOfOperation resetModeKrbTgtTestAccountsResetOnce
+  * Specify the AD Forest => use parameter with value -targetedADforestFQDN COMPANY.COM
+  * Specify the AD Domain => use parameter with value -targetedADdomainFQDN COMPANY.COM
+  * Select the scope of testing (select either 1, 3 or 4):
+    * 1 - Scope of KrbTgt in use by all RWDCs in the AD Domain => use parameter with value -targetKrbTgtAccountScope allRWDCs
+    * 2 - Scope of KrbTgt in use by specific RODC - Single/Multiple RODC(s) in the AD Domain => use parameter with value -targetKrbTgtAccountScope specificRODCs -targetRODCFQDNList RODC1.COMPANY.COM,RODC2.COMPANY.COM
+    * 3 - Scope of KrbTgt in use by specific RODC - All RODCs in the AD Domain => use parameter with value -targetKrbTgtAccountScope allRODCs
+    * 4 - Scope of ANY KrbTgt in use by ANY DC - All RWDCs/RODCs in the AD Domain => use parameter with value -targetKrbTgtAccountScope allRWDCsAndRODCs
+  * Confirm to CONTINUE or STOP for normal operations => use parameter -continueOps
+  * Confirm to CONTINUE, SKIP or STOP if MAJOR IMPACT is DETECTED => NOT SUPPORTED, which means that if this is detected, the script automatically SKIPS the processing of the specific KRBTGT account
 
 &nbsp;
 
