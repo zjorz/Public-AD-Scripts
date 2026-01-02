@@ -25,11 +25,11 @@ $version = "v3.6, 2026-01-01"
 
 <#
 	AUTHOR
-		Written By....................: Jorge de Almeida Pinto [Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:]
-		Re-Written By.................: N.A.
-		Company.......................: IAMTEC >> Identity | Security | Recovery [https://www.iamtec.eu/]
-		Blog..........................: Jorge's Quest For Knowledge [http://jorgequestforknowledge.wordpress.com/]
-		For Feedback/Questions........: scripts.gallery@iamtec.eu
+		Written By........................: Jorge de Almeida Pinto [Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:]
+		Re-Written By.....................: N.A.
+		Company...........................: IAMTEC >> Identity | Security | Recovery [https://www.iamtec.eu/]
+		Blog..............................: Jorge's Quest For Knowledge [http://jorgequestforknowledge.wordpress.com/]
+		For Feedback/Questions/Requests...: [GITHUB](https://github.com/zjorz/Public-AD-Scripts/issues) (<= PREFERRED) Or mail to "scripts DOT gallery AT iamtec.eu"
 			--> Please Describe Your Scenario As Best As Possible With As Much Detail As Possible.
 			--> If Applicable Describe What Does and/Or Does Not Work.
 			--> If Applicable Describe What Should Be/Work Different And Explain Why/How.
