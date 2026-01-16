@@ -1,5 +1,9 @@
 # SCRIPT: Reset-KrbTgt-Password-For-RWDCs-And-RODCs
 
+## CURRENT version
+
+v3.7 - 2026-01-16
+
 ## DISCLAIMER
 
 * The script is FREEWARE, you are free to distribute/update it, but always refer to the original source(s) as the location where you got it
@@ -133,11 +137,28 @@ AUTOMATED TESTING (PASSWORD RESET ROUTINE)
 * When executing the Password Reset Routing (mode 4 for TEST/BOGUS KrbTgt accounts, and mode 6 for PROD/REAL KrbTgt accounts), the script performs an AD convergence check whether or not the password reset has occurred for the targeted KrbTgt account(s). If the password WAS NOT reset for the targeted KrbTgt account, the script logs clearly: "NO PASSWORD HAS BEEN SET FOR [&lt;Distinguished Name Of Targeted KrbTgt Account&gt;]". If the password WAS reset for the targeted KrbTgt account, the script logs clearly: "THE NEW PASSWORD FOR [&lt;Distinguished Name Of Targeted KrbTgt Account&gt;] HAS BEEN SET on RWDC [&lt;FQDN Of Targeted RWDC For The Change&gt;]!"
 * The script expects to find real DCs (RWDCs and RODCs!) in the default domain controllers OU, and NOT outside of that OU!
 * When using the mailing function, NO check is done for expiring credentials (secrets, certificates, etc.)
+* When using the script through Remote PowerShell (WinRM), you will hit the double-hop issue as explained in <https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/ps-remoting-second-hop>.	When connecting to a specific RWDC using some credentials to execute the script on that specific RWDC, and when that specific RWDC connects to other RWDCs to either perform an RSoP to determine the Max TGT lifetime, perform the Replicate Single Object" operation or to query if the password has replicated to the other RWDC, authentication issues will occur as the credentials used to connect to the specific RWDC are not passed to the other RWDCs. A workaround for this is to create an on-demand scheduled task on a specific RWDC, and then through Remote PowerShell run the Scheduled Task.
+* If mail functionality is used (-sendMailWithLogFile), at the the log file will be zipped and mailed as an attachment. A few seconds after sending the mail, the script tries to delete the ZIP file while keeping the original. Sometimes that may fail because the file is locked. That is not a problem as every time the script runs, it checks for old LOG files and old ZIP files and deletes them accordingly!
 
 &nbsp;
 
 ## RELEASE NOTES
-
+* v3.7, 2026-01-16, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+  * Code Improvement: Updated the function "determineUserAccountForRSoP"
+  * Code Improvement: Where applicable updated "$targetedADdomainDomainSID" with "$($script:targetedADdomainDomainSID)"
+  * Code Improvement: For the function "determineUserAccountForRSoP" the parameter "-targetedADdomainNearestRWDCFQDN" was renamed to "-targetedADdomainRWDCFQDN"
+  * Code Improvement: For the function "determineUserAccountForRSoP" an additional error condition was added to catch the error if it was not possible to remotely connect to the nearest RWDC and determine an account for RSoP. The Default Values will be assumed instead!
+  * Code Improvement: Added an additional error conditions to catch the error if it was not possible to perform an RSoP for whatever possible reason to determine the Max Tgt Lifetime in hours from the winning gpo and the Max Clock Skew in minutes from the winning gpo. The Default Values will be assumed instead!
+  * Code Improvement: For the function "determineKerberosPolicySettings" the unused parameters "-targetedADdomainFQDN", "-targetedADdomainNearestRWDCFQDN" and "-execDateTimeCustom" were removed
+  * Improved User Experience: Added new "KNOWN ISSUES/BUGS" about using Remote PowerShell to execute the script
+  * Improved User Experience: Operating System Version/Edition is now also listed for the local computer the script is executed on
+  * Improved User Experience: Added support to use an OPEN SMTP RELAY (No Authentication) - BOTH script and XML were updated!
+  * Improved User Experience: In the mail message send out, the version of the script used is displayed
+  * Improved User Experience: Separated the definition of using SSL for SMTP from the port number used. Needs to be specified separately now! - BOTH script and XML were updated!
+  * Improved User Experience: Created additional function "validateXMLConfigFileForNodes" to warn about missing nodes in the XML Configuration File if its presence is detected. This is to better support updates to the XML Configuration File and warn about changes to it
+  * Bug Fix: Minor textual fixes
+  * Bug Fix: Added missing code updates from S.DS.P v2.3.0
+  * Bug Fix: Fixed an issue with the variable $useXMLConfigFileSettings when no XML file was being used
 * v3.6, 2026-01-01, Jorge de Almeida Pinto [MVP Identity And Access [MVP Identity And Access - Security / Lead Identity/Security Architect]:
   * Code Improvement: Optimizing code by determining required DNs once and reuse that, instead of continuously query for the same information
   * Code Improvement: Updated all functions (where applicable), except the ones from S.DS.P, to specify the data type of each parameter
@@ -170,9 +191,9 @@ AUTOMATED TESTING (PASSWORD RESET ROUTINE)
   * Improved User Experience: Added a function "cleanUpOldLogs" to cleanup all the logs older than 60 (log files) / 10 (orphaned zip files) days
   * New Feature: Added a new scope option "4 - Scope of ANY KrbTgt in use by ANY DC - All RWDCs/RODCs in the AD Domain" for ALL RWDCs and ALL RODCs in an AD Domain (in addition to the existing scopes "1 - Scope of KrbTgt in use by all RWDCs in the AD Domain", "2 - Scope of KrbTgt in use by specific RODC - Single/Multiple RODC(s) in the AD Domain", "3 - Scope of KrbTgt in use by specific RODC - All RODCs in the AD Domain")
   * New Feature: (EXPERIMENTAL!) Added an option to monitor for Golden Tickets after a Krbtgt Password reset (Option "7 - Golden Ticket Monitor Mode | Checking Domain Controllers For Event ID 4769 With Specific Error Codes 0x6 (= KDC_ERR_C_PRINCIPAL_UNKNOWN = Client not found in Kerberos database), 0x1F (= KRB_AP_ERR_BAD_INTEGRITY = Integrity check on decrypted field failed) or 0x40 (= KDC_ERR_INVALID_SIG = The signature is invalid))
-    (Inspired by https://github.com/YossiSassi/Invoke-PostKrbtgtResetMonitor)
+    (Inspired by <https://github.com/YossiSassi/Invoke-PostKrbtgtResetMonitor>)
   * New Feature: Adding support for "Password Reset Routine", which is scheduled/automated password reset of KrbTgt account password for either all RWDCs, all individual RODCs and/or specific RODCs
-    (Inspired by https://github.com/MuscleBobBuff/KRBTGT/blob/main/AD%20-%20KRBTGT%20Reset%20Routines.ps1)
+    (Inspired by <https://github.com/MuscleBobBuff/KRBTGT/blob/main/AD%20-%20KRBTGT%20Reset%20Routines.ps1>)
     1) Determines the current state, even if never used, redefines the new state and calculates the next 1st and 2nd password reset dates based upon the pre-defined intervals
 	2) Resets the password of the targeted krbtgt account(s) the 1st time if the 1st calculated date equals TODAY
 	3) resets the password of the targeted krbtgt account(s) the 2nd time if the 2nd calculated date equals TODAY

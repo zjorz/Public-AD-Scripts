@@ -21,7 +21,7 @@ Param (
 ###
 # Version Of Script
 ###
-$version = "v3.6, 2026-01-01"
+$script:version = "v3.7, 2026-01-16"
 
 <#
 	AUTHOR
@@ -92,8 +92,33 @@ $version = "v3.6, 2026-01-01"
 			HAS BEEN SET on RWDC [<FQDN Of Targeted RWDC For The Change>]!"
 		- The script expects to find real DCs (RWDCs and RODCs!) in the default domain controllers OU, and NOT outside of that OU!
 		- When using the mailing function, NO check is done for expiring credentials (secrets, certificates, etc.)
+		- When using the script through Remote PowerShell (WinRM), you will hit the double-hop issue as explained in https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/ps-remoting-second-hop
+			When connecting to a specific RWDC using some credentials to execute the script on that specific RWDC, and when that specific RWDC connects to other RWDCs
+			to either perform an RSoP to determine the Max TGT lifetime, perform the Replicate Single Object" operation or to query if the password has replicated
+			to the other RWDC, authentication issues will occur as the credentials used to connect to the specific RWDC are not passed to the other RWDCs. A
+			workaround for this is to create an on-demand scheduled task on a specific RWDC, and then through Remote PowerShell run the Scheduled Task.
+		- If mail functionality is used (-sendMailWithLogFile), at the the log file will be zipped and mailed as an attachment. A few seconds after sending the mail, the script
+			tries to delete the ZIP file while keeping the original. Sometimes that may fail because the file is locked. That is not a problem as every time the script runs, it
+			checks for old LOG files and old ZIP files and deletes them accordingly!
 
 	RELEASE NOTES
+		v3.7, 2026-01-16, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+			- Code Improvement: Updated the function "determineUserAccountForRSoP"
+			- Code Improvement: Where applicable updated "$targetedADdomainDomainSID" with "$($script:targetedADdomainDomainSID)"
+			- Code Improvement: For the function "determineUserAccountForRSoP" the parameter "-targetedADdomainNearestRWDCFQDN" was renamed to "-targetedADdomainRWDCFQDN"
+			- Code Improvement: For the function "determineUserAccountForRSoP" an additional error condition was added to catch the error if it was not possible to remotely connect to the nearest RWDC and determine an account for RSoP. The Default Values will be assumed instead!
+			- Code Improvement: Added an additional error conditions to catch the error if it was not possible to perform an RSoP for whatever possible reason to determine the Max Tgt Lifetime in hours from the winning gpo and the Max Clock Skew in minutes from the winning gpo. The Default Values will be assumed instead!
+			- Code Improvement: For the function "determineKerberosPolicySettings" the unused parameters "-targetedADdomainFQDN", "-targetedADdomainNearestRWDCFQDN" and "-execDateTimeCustom" were removed
+			- Improved User Experience: Added new "KNOWN ISSUES/BUGS" about using Remote PowerShell to execute the script
+			- Improved User Experience: Operating System Version/Edition is now also listed for the local computer the script is executed on
+			- Improved User Experience: Added support to use an OPEN SMTP RELAY (No Authentication) - BOTH script and XML were updated!
+			- Improved User Experience: In the mail message send out, the version of the script used is displayed
+			- Improved User Experience: Separated the definition of using SSL for SMTP from the port number used. Needs to be specified separately now! - BOTH script and XML were updated!
+			- Improved User Experience: Created additional function "validateXMLConfigFileForNodes" to warn about missing nodes in the XML Configuration File if its presence is detected. This is to better support updates to the XML Configuration File and warn about changes to it
+			- Bug Fix: Minor textual fixes
+			- Bug Fix: Added missing code updates from S.DS.P v2.3.0
+			- Bug Fix: Fixed an issue with the variable $useXMLConfigFileSettings when no XML file was being used
+
 		v3.6, 2026-01-01, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
 			- Code Improvement: Optimizing code by determining required DNs once and reuse that, instead of continuously query for the same information
 			- Code Improvement: Updated all functions (where applicable), except the ones from S.DS.P, to specify the data type of each parameter
@@ -1443,8 +1468,8 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 		}
 
 		#remove unwanted props
-		$PropertiesToLoad = @($propertiesToLoad | where-object { $_ -notin @('distinguishedName', '1.1') })
-		#if asterisk in list of props to load, load all props available on object despite of  required list
+        $PropertiesToLoad=$propertiesToLoad.Where{$_ -notin @('distinguishedName','1.1')}
+        #if asterisk in list of props to load, load all props available on object despite of  required list
 		# SDSP_INDIVIDUAL_UPDATES Updated: $xxx.Count to $($xxx | Measure-Object).Count
 		if ($($propertiesToLoad | Measure-Object).Count -eq 0) { $NoAttributes = $true } else { $NoAttributes = $false }
 		if ('*' -in $PropertiesToLoad) { $PropertiesToLoad = @() }
@@ -2730,10 +2755,14 @@ function GetResultsDirectlyInternal {
                     $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($targetAttrName -in $BinaryProperties)
                     try {
                         if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                            if($BinaryInput -eq $true) {
-                                $data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([byte[]])))
-                            } else {
-                                $data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([string])))
+							try {
+								if($BinaryInput -eq $true) {
+									$data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([byte[]])))
+								} else {
+									$data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([string])))
+								}
+							} catch {
+								Write-Warning "Transform failed. Object: $($sr.DistinguishedName) `tAttribute: $targetAttrName`: $_"
                             }
                         } else {
                             if($BinaryInput -eq $true) {
@@ -3001,10 +3030,14 @@ function GetResultsIndirectlyInternal {
                         #protecting against LDAP servers who don't understand '1.1' prop
                         try {
                             if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                                if($BinaryInput -eq $true) {
-                                    $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([byte[]])))
-                                } else {
-                                    $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([string])))
+                                try {
+                                    if($BinaryInput -eq $true) {
+                                        $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([byte[]])))
+                                    } else {
+                                        $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([string])))
+                                    }
+                                } catch {
+                                    Write-Warning "Transform failed. Object: $($sr.DistinguishedName) `tAttribute: $targetAttrName`: $_"
                                 }
                             } else {
                                 if($BinaryInput -eq $true) {
@@ -3166,9 +3199,8 @@ function GetResultsIndirectlyRangedInternal {
                     if($null -ne $transform -and $null -ne $transform.OnLoad) {
                         try {
                             $data[$attrName] = (& $transform.OnLoad -Values $data[$attrName])
-
                         } catch {
-                            Write-Error -ErrorRecord $_
+							Write-Warning "Transform failed. Object: $($sr.DistinguishedName) `tAttribute: $targetAttrName`: $_"
                         }
                     }
                 }
@@ -3658,6 +3690,78 @@ Function writeLog {
 }
 $loggingDef = "function Logging{${function:Logging}}"
 
+### FUNCTION: Validating The XML Configuration File For The Presence Of Nodes
+Function validateXMLConfigFileForNodes {
+	Param(
+		[XML]$configSettings
+	)
+
+	$requiredXmlNodes = @()
+	$requiredXmlNodes += "xmlReleaseVersion"
+	$requiredXmlNodes += "xmlReleaseDate"
+	$requiredXmlNodes += "useXMLConfigFileSettings"
+	$requiredXmlNodes += "connectionTimeoutInMilliSeconds"
+	$requiredXmlNodes += "goldenTicketMonitorWaitingIntervalBetweenRunsInSeconds"
+	$requiredXmlNodes += "goldenTicketMonitoringPeriodInSeconds"
+	$requiredXmlNodes += "resetRoutineEnabled"
+	$requiredXmlNodes += "resetRoutineFirstResetIntervalInDays"
+	$requiredXmlNodes += "resetRoutineSecondResetIntervalInDays"
+	$requiredXmlNodes += "resetRoutineAttributeForResetState"
+	$requiredXmlNodes += "resetRoutineAttributeForResetDateAction1"
+	$requiredXmlNodes += "resetRoutineAttributeForResetDateAction2"
+	$requiredXmlNodes += "sendMailEnabled"
+	$requiredXmlNodes += "smtpServer"
+	$requiredXmlNodes += "smtpPort"
+	$requiredXmlNodes += "useSSL"
+	$requiredXmlNodes += "smtpCredsType"
+	$requiredXmlNodes += "smtpCredsUserName"
+	$requiredXmlNodes += "smtpCredsPassword"
+	$requiredXmlNodes += "mailSubject"
+	$requiredXmlNodes += "mailPriority"
+	$requiredXmlNodes += "mailBody"
+	$requiredXmlNodes += "mailFromSender"
+	$requiredXmlNodes += "mailToRecipients"
+	$requiredXmlNodes += "mailCcRecipients"
+
+	$nodesMissing = @()
+	$nodesPresent = @()
+
+	$requiredXmlNodes | ForEach-Object {
+		If ($($script:configResetKrbTgtPasswordSettings.SelectNodes("//resetKrbTgtPassword/$($_)")) -eq $null) {
+			$nodesMissing += $_
+		} Else {
+			$nodesPresent += $_
+		}
+	}
+	
+	If (($nodesMissing | Measure-Object).Count -gt 0) {
+		Write-Host ""
+		Write-Host "====================================================" -ForeGroundColor Magenta
+		Write-Host "The XML Configuration File Was Detected And Analyzed" -ForeGroundColor Magenta
+		Write-Host "====================================================" -ForeGroundColor Magenta
+		Write-Host ""
+		Write-Host "XML Configuration File...: $($script:scriptXMLConfigFilePath)"
+		Write-Host ""
+		$nodesMissing | ForEach-Object {
+			Write-Host " > Missing Node...: $($_)" -ForeGroundColor Red
+		}
+		Write-Host ""
+		$nodesPresent | ForEach-Object {
+			Write-Host " > Present Node...: $($_)" -ForeGroundColor Green
+		}
+		Write-Host ""
+		Write-Host "Please Update The CURRENT XML Configuration File Being Used!" -ForeGroundColor Yellow
+		Write-Host ""
+		Write-Host "For A Sample Of The XML Configuration File, Please See:" -ForeGroundColor Yellow
+		Write-Host " > https://github.com/zjorz/Public-AD-Scripts/blob/master/Reset-KrbTgt-Password-For-RWDCs-And-RODCs.xml" -ForeGroundColor Yellow
+		Write-Host ""
+		Write-Host "REMARK: Make Sure To ALSO Check The Examples Of How To Configure The XML Configuration File To Use A Certain SMTP Relay. There Might Be Updates!" -ForeGroundColor Yellow
+		Write-Host ""
+
+		BREAK
+	}
+}
+
 ### FUNCTION: Logging Data To The Log File
 Function cleanUpOldLogs {
 	Param(
@@ -3687,7 +3791,7 @@ Function cleanUpOldLogs {
 			}
 		}
 	} Else {
-		writeLog -dataToLog "NO $fileType Files To Deleted..."
+		writeLog -dataToLog "NO $fileType Files To Delete..."
 	}
 }
 
@@ -4272,7 +4376,7 @@ Function editADAccount {
 			$ldapConnection.Dispose()
 		} Catch {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Contact Object With 'sAMAccountName=$krbTgtSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -5043,76 +5147,82 @@ Function checkADReplicationConvergence {
 ### FUNCTION: Determine The User Account To Use For RSoP
 Function determineUserAccountForRSoP {
 	Param (
-		[string]$targetedADdomainNearestRWDCFQDN,
+		[string]$targetedADdomainRWDCFQDN,
 		[string]$targetedADdomainDomainSID
 	)
 
-	# Get All User Profiles That Match The Targeted AD Domain Sid
-	$sidOfProfilesOfTargetedDomainOnDC = Get-CimInstance Win32_UserProfile -ComputerName $targetedADdomainNearestRWDCFQDN | Where-Object { $_.SID -match $targetedADdomainDomainSID } | ForEach-Object { $_.SID }
-	$sidCandidatesOnDC = @()
-	
-	# For Each Scoped User Profile Get The Object Class And The Constructed Attribute "tokenGroupsNoGCAcceptable"
-	$sidOfProfilesOfTargetedDomainOnDC | ForEach-Object {
-		$targetObjectToCheck = $null
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainNearestRWDCFQDN -EncryptionType Kerberos
-				$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$_)"
-				$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($targetObjectToCheck.distinguishedName) -searchFilter "(objectSid=$_)" -searchScope Base -PropertiesToLoad @("objectClass","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainNearestRWDCFQDN' For Object '$_' To Determine Its ObjectClass..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainNearestRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-				$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$_)"
-				$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($targetObjectToCheck.distinguishedName) -searchFilter "(objectSid=$_)" -searchScope Base -PropertiesToLoad @("objectClass","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainNearestRWDCFQDN' For Object '$_' To Determine Its ObjectClass Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
-		
-		# From The List With SIDs In Byte Format, Create A List Wth SIDs In String Format
-		$groupSidsByteFormatForAccount = $targetObjectToCheck.tokenGroupsNoGCAcceptable
-		$groupSidsStringFormatForAccount = @()
-		$groupSidsByteFormatForAccount | ForEach-Object {
-			$sidByteFormat = $_
-			$sidStringFormat = (New-Object System.Security.Principal.SecurityIdentifier($sidByteFormat,0)).Value
-			$groupSidsStringFormatForAccount += $sidStringFormat
-		}
+	# Try To Get All User Profiles That Match The Targeted AD Domain Sid
+	Try {
+		$sidOfProfilesOfTargetedDomainOnDC = Get-CimInstance Win32_UserProfile -ComputerName $targetedADdomainRWDCFQDN -ErrorAction STOP | Where-Object { $_.SID -match $targetedADdomainDomainSID } | ForEach-Object { $_.SID }
+		$sidCandidatesOnDC = @()
 
-		# If The User Profile Belongs To An Account With Object Class USER And Which Is A Member Of Either Or Both "Administrators" And/Or "Domain Admins" Group, Add It As A Possible Candidate To Choose From
-		If ($targetObjectToCheck.objectClass[-1] -eq "user" -And ($groupSidsStringFormatForAccount.Contains("S-1-5-32-544") -Or $groupSidsStringFormatForAccount.Contains("$targetedADdomainDomainSID-512"))) {
-			$sidCandidatesOnDC += $_
+		# For Each Scoped User Profile Get The Object Class And The Constructed Attribute "tokenGroupsNoGCAcceptable"
+		$sidOfProfilesOfTargetedDomainOnDC | ForEach-Object {
+			$sidOfProfile = $_
+			$targetObjectToCheckDN = $null
+			$targetObjectToCheck = $null
+			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
+				Try {
+					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
+					$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
+					$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
+					$ldapConnection.Dispose()
+				} Catch {
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				}
+			}
+			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+				Try {
+					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
+					$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
+					$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
+					$ldapConnection.Dispose()
+				} Catch {
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				}
+			}
+		
+			# From The List With SIDs In Byte Format, Create A List Wth SIDs In String Format
+			$groupSidsByteFormatForAccount = $targetObjectToCheck.tokenGroupsNoGCAcceptable
+			$groupSidsStringFormatForAccount = @()
+			$groupSidsByteFormatForAccount | ForEach-Object {
+				$sidByteFormat = $_
+				$sidStringFormat = (New-Object System.Security.Principal.SecurityIdentifier($sidByteFormat,0)).Value
+				$groupSidsStringFormatForAccount += $sidStringFormat
+			}
+
+			# If The User Profile Belongs To An Account With Object Class USER And Which Is A Member Of Either Or Both "Administrators" And/Or "Domain Admins" Group, Add It As A Possible Candidate To Choose From
+			If ($targetObjectToCheck.objectClass[-1] -eq "user" -And ($groupSidsStringFormatForAccount.Contains("S-1-5-32-544") -Or $groupSidsStringFormatForAccount.Contains("$targetedADdomainDomainSID-512"))) {
+				$sidCandidatesOnDC += $_
+			}
 		}
+		If ($sidCandidatesOnDC -contains ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value) {
+			$sidToChoose = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+		} ElseIf ($($sidCandidatesOnDC | Measure-Object).Count -gt 0) {
+			$sidToChoose = $sidCandidatesOnDC | Get-Random
+		} Else {
+			$sidToChoose = $sidOfProfilesOfTargetedDomainOnDC | Get-Random
+		}
+		$accountToChooseForRSoP = $(New-Object System.Security.Principal.SecurityIdentifier($sidToChoose)).Translate([System.Security.Principal.NTAccount]).Value
+	} Catch {
+		$accountToChooseForRSoP = "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP"
 	}
-	If ($sidCandidatesOnDC -contains ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value) {
-		$sidToChoose = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-	} ElseIf ($($sidCandidatesOnDC | Measure-Object).Count -gt 0) {
-		$sidToChoose = $sidCandidatesOnDC | Get-Random
-	} Else {
-		$sidToChoose = $sidOfProfilesOfTargetedDomainOnDC | Get-Random
-	}
-	$accountToChooseForRSoP = $(New-Object System.Security.Principal.SecurityIdentifier($sidToChoose)).Translate([System.Security.Principal.NTAccount]).Value
 
 	Return $accountToChooseForRSoP
 }
@@ -5121,9 +5231,6 @@ $determineUserAccountForRSoPDef = "function determineUserAccountForRSoP{${functi
 ### FUNCTION: Determine Kerberos Policy Settings
 Function determineKerberosPolicySettings {
 	Param (
-		[string]$targetedADdomainFQDN,
-		[string]$targetedADdomainNearestRWDCFQDN,
-		[string]$execDateTimeCustom,
 		[Xml]$gpRSoPxml
 	)
 
@@ -5825,6 +5932,7 @@ Function sendMailMessage {
 
 	$smtpServer = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpServer
 	$smtpPort = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpPort
+	$useSSL = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.useSSL
 	$smtpCredsType = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsType
 	$mailSubject = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailSubject
 	$mailPriority = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailPriority
@@ -6054,9 +6162,11 @@ Function sendMailMessage {
 		}
 	}
 
-	If ($smtpCredsType.ToUpper() -eq "USERNAME_PASSWORD") {
-		$smtpCrdsUsrName = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsUserName
-		$smtpCrdsPasswd = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsPassword
+	If ($smtpCredsType.ToUpper() -eq "USERNAME_PASSWORD" -Or $smtpCredsType.ToUpper() -eq "NO_AUTHN") {
+		If ($smtpCredsType.ToUpper() -eq "USERNAME_PASSWORD") {
+			$smtpCrdsUsrName = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsUserName
+			$smtpCrdsPasswd = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsPassword
+		}
 
 		# Create Mail Message Object
 		$mail = New-Object System.Net.Mail.MailMessage
@@ -6084,13 +6194,14 @@ Function sendMailMessage {
 
 		# Create SMTP-Client To Send Mail Message
 		$smtp = New-Object System.Net.Mail.SmtpClient($smtpServer, $smtpPort)
-		If ($smtpPort -eq 465 -Or $smtpPort -eq 587) {
+		If ($useSSL.ToUpper() -eq "TRUE") {
 			$smtp.EnableSsl = $true
 		} Else {
 			$smtp.EnableSsl = $false
 		}
-		$smtp.Credentials = New-Object System.Net.NetworkCredential($smtpCrdsUsrName, $(ConvertTo-SecureString $smtpCrdsPasswd -AsPlainText -Force))
-
+		If ($smtpCredsType.ToUpper() -eq "USERNAME_PASSWORD") {
+			$smtp.Credentials = New-Object System.Net.NetworkCredential($smtpCrdsUsrName, $(ConvertTo-SecureString $smtpCrdsPasswd -AsPlainText -Force))
+		}
 
 		# Finally Send Mail
 		Try {
@@ -6152,6 +6263,7 @@ Function sendMailWithAttachmentAndDisplayOutput  {
 	} Catch {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Failed To Delete The File '$zipFilePath'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "    REMARK: Although it failed now, it will eventually be deleted during regular cleaning each time the script executes..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6315,7 +6427,7 @@ $fqdnADForestOfComputer = ([System.DirectoryServices.ActiveDirectory.Domain]::Ge
 [string]$logFilePath = Join-Path $currentScriptFolderPath $($execDateTimeCustom + "_" + $localComputerName + "_" + $currentScriptFileName.Replace(".ps1", ".log"))
 [string]$zipFilePath = Join-Path $currentScriptFolderPath $($execDateTimeCustom + "_" + $localComputerName + "_" + $currentScriptFileName.Replace(".ps1", ".zip"))
 $argsCount = $PSBoundParameters.Count
-[string]$scriptXMLConfigFilePath = Join-Path $currentScriptFolderPath $currentScriptFileName.Replace(".ps1", ".xml")
+[string]$script:scriptXMLConfigFilePath = Join-Path $currentScriptFolderPath $currentScriptFileName.Replace(".ps1", ".xml")
 $script:poshVersion = $psVersionTable.PSVersion
 $script:numAccntsProcessedTOTAL = 0							# Counter For TOTAL Accounts Processed
 $script:numAccntsResetCandidateYES = 0						# Counter For CANDIDATE Accounts Processed For Password Reset
@@ -6329,10 +6441,14 @@ $script:maxClockSkewMins = 5								# The Value For The Max Clock Skew In Minute
 $script:passwordResetRoutineOverlapPeriodInMinutes = 120	# The Value The Overlap Period When Executing The Password Reset Routine
 
 ### Read The XML Config File
-If (Test-Path $scriptXMLConfigFilePath) {
+If (Test-Path $($script:scriptXMLConfigFilePath)) {
 
-	[XML]$script:configResetKrbTgtPasswordSettings = Get-Content $scriptXMLConfigFilePath
+	[XML]$script:configResetKrbTgtPasswordSettings = Get-Content $($script:scriptXMLConfigFilePath)
 
+	validateXMLConfigFileForNodes -configSettings $script:configResetKrbTgtPasswordSettings
+
+	$xmlReleaseVersion = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.xmlReleaseVersion
+	$xmlReleaseDate = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.xmlReleaseDate
 	$useXMLConfigFileSettings = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.useXMLConfigFileSettings
 	$script:resetRoutineEnabled = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.resetRoutineEnabled
 	$sendMailEnabled = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.sendMailEnabled
@@ -6360,7 +6476,7 @@ If (Test-Path $scriptXMLConfigFilePath) {
 	}
 
 	If ($useXMLConfigFileSettings.ToUpper() -eq "TRUE") {
-		$connectionParametersSource = "XML Config File '$scriptXMLConfigFilePath'"
+		$connectionParametersSource = "XML Config File '$($script:scriptXMLConfigFilePath)'"
 
 		$connectionTimeout = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.connectionTimeoutInMilliSeconds
 		If ($connectionTimeout -notmatch "^\d+$") {
@@ -6448,6 +6564,18 @@ If (Test-Path $scriptXMLConfigFilePath) {
 				BREAK
 			}
 
+			$script:resetRoutineAttributeForResetState = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.resetRoutineAttributeForResetState
+			If ($($script:resetRoutineAttributeForResetState) -notmatch "^[a-zA-Z0-9_-]{0,}$") {
+				writeLog -dataToLog ""
+				writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog "  > 'resetRoutineAttributeForResetState'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog ""
+				writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog ""
+
+				BREAK
+			}
+
 			$script:resetRoutineAttributeForResetDateAction1 = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.resetRoutineAttributeForResetDateAction1
 			If ($($script:resetRoutineAttributeForResetDateAction1) -notmatch "^[a-zA-Z0-9_-]{0,}$") {
 				writeLog -dataToLog ""
@@ -6472,17 +6600,6 @@ If (Test-Path $scriptXMLConfigFilePath) {
 				BREAK
 			}
 
-			$script:resetRoutineAttributeForResetState = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.resetRoutineAttributeForResetState
-			If ($($script:resetRoutineAttributeForResetState) -notmatch "^[a-zA-Z0-9_-]{0,}$") {
-				writeLog -dataToLog ""
-				writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "  > 'resetRoutineAttributeForResetState'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog ""
-				writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog ""
-
-				BREAK
-			}
 		}
 
 		If ($sendMailEnabled.ToUpper() -ne "TRUE" -And $sendMailWithLogFile) {
@@ -6521,8 +6638,20 @@ If (Test-Path $scriptXMLConfigFilePath) {
 				BREAK
 			}
 
+			$useSSL = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.useSSL
+			If ($useSSL.ToUpper() -eq "REPLACE_ME_SEE_EXAMPLES") {
+				writeLog -dataToLog ""
+				writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog "  > 'useSSL'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog ""
+				writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog ""
+
+				BREAK
+			}
+
 			$smtpCredsType = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsType
-			If ($smtpCredsType.ToUpper() -ne "EIDAPPCLIENTID_SECRET" -And $smtpCredsType.ToUpper() -ne "EIDAPPCLIENTID_CERTIFICATE" -And $smtpCredsType.ToUpper() -ne "USERNAME_PASSWORD") {
+			If ($smtpCredsType.ToUpper() -ne "EIDAPPCLIENTID_SECRET" -And $smtpCredsType.ToUpper() -ne "EIDAPPCLIENTID_CERTIFICATE" -And $smtpCredsType.ToUpper() -ne "USERNAME_PASSWORD" -And $smtpCredsType.ToUpper() -ne "NO_AUTHN") {
 				writeLog -dataToLog ""
 				writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "  > 'smtpCredsType'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6623,6 +6752,9 @@ If (Test-Path $scriptXMLConfigFilePath) {
 	}
 } Else {
 	$connectionParametersSource = "Default Values In Script - No XML Config File Found"
+	$xmlReleaseVersion = "N.A."
+	$xmlReleaseDate = "N.A."
+	$useXMLConfigFileSettings = "FALSE"
 
 	# No XML Config File Was Found => Using Default Values In Script
 	$connectionTimeout = 500										# When Checking If The Host Is Reachable Over Certain Port. This Is The Timeout In Milliseconds
@@ -6691,6 +6823,7 @@ writeLog -dataToLog "FQDN AD Domain Of Computer............: $fqdnADDomainOfComp
 writeLog -dataToLog "FQDN Computer In AD Domain............: $fqdnComputerInADDomain"
 writeLog -dataToLog "FQDN Computer In DNS..................: $fqdnComputerInDNS"
 writeLog -dataToLog "FQDN DNS Domain Of Computer...........: $fqdnDnsDomainOfComputer"
+writeLog -dataToLog "Operating System Of Computer..........: $((Get-CimInstance -Class Win32_OperatingSystem).Caption)"
 writeLog -dataToLog "Running/Execution User Account........: $adRunningUserAccount"
 
 writeLog -dataToLog ""
@@ -6702,9 +6835,9 @@ If ($argsCount -ge 1) {
 	writeLog -dataToLog ""
 }
 
-writeLog -dataToLog "Source Of Connection Parameters.......: $connectionParametersSource"
+writeLog -dataToLog "Source Of Connection Parameters.......: $connectionParametersSource (Version: $xmlReleaseVersion) (Date: $xmlReleaseDate)"
 writeLog -dataToLog ""
-writeLog -dataToLog "Configuration XML.Options.............:"
+writeLog -dataToLog "Configuration XML Options.............:"
 writeLog -dataToLog " - Use XML Config Settings............: $useXMLConfigFileSettings"
 writeLog -dataToLog " - Connection Timeout.................: $connectionTimeout Milliseconds"
 writeLog -dataToLog " - Reset Routine Enabled..............: $($script:resetRoutineEnabled)"
@@ -6721,6 +6854,7 @@ writeLog -dataToLog " - Send Mail..........................: $sendMailEnabled"
 If ($sendMailEnabled.ToUpper() -eq "TRUE") {
 	writeLog -dataToLog " - smtpServer.........................: $smtpServer"
 	writeLog -dataToLog " - smtpPort...........................: $smtpPort"
+	writeLog -dataToLog " - useSSL.............................: $useSSL"
 	writeLog -dataToLog " - smtpCredsType......................: $smtpCredsType"
 	writeLog -dataToLog " - smtpCrdsUsrName....................: $smtpCrdsUsrName"
 	writeLog -dataToLog " - mailSubject........................: $mailSubject"
@@ -6746,7 +6880,7 @@ writeLog -dataToLog ""
 ###
 ### Checking Elevation Status Of Current Process
 writeLog -dataToLog "------------------------------------------------------------------------------------------------------------------------------------------------------" -lineType "HEADER" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "CLEANING UP OLD LOGS..." -lineType "HEADER" -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "CLEANING UP OLD LOGS/ZIPS..." -lineType "HEADER" -logFileOnly $false -noDateTimeInLogLine $false
 writeLog -dataToLog ""
 cleanUpOldLogs -folder $currentScriptFolderPath -filterName "*$($currentScriptFileName.Replace(".ps1",".log"))" -numDaysToKeep 60 -fileType "LOG"
 cleanUpOldLogs -folder $currentScriptFolderPath -filterName "*$($currentScriptFileName.Replace(".ps1",".zip"))" -numDaysToKeep 10 -fileType "ZIP"
@@ -6802,7 +6936,7 @@ If ($skipElevationCheck -eq $false) {
 				Remove-Item $($currentScriptFolderPath + "\Reset-KrbTgt-Password-For-RWDCs-And-RODCs_ELEVATION.TXT") -Force
 
 				If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-					$context = "SCRIPT ABORT - ERROR: The elevation of the PowerShell process failed. Check the permissions of the account and the configuration of User Account Control (UAC)!"
+					$context = "SCRIPT ABORT - ERROR: The elevation of the PowerShell process failed. Check the permissions of the account and the configuration of User Account Control (UAC)! (Script Version: $($script:version))"
 
 					sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 				}
@@ -7462,7 +7596,7 @@ If ($adForestValidity -eq $true) {
 
 	# Mail The Log File With The Results
 	If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-		$context = "SCRIPT ABORT - ERROR: The specified $adForestLocation AD forest '$($script:targetedADforestFQDN)' IS NOT resolvable through DNS and IS NOT reachable through RootDse!"
+		$context = "SCRIPT ABORT - ERROR: The specified $adForestLocation AD forest '$($script:targetedADforestFQDN)' IS NOT resolvable through DNS and IS NOT reachable through RootDse! (Script Version: $($script:version))"
 		
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
@@ -7540,7 +7674,7 @@ If ($adForestAccessibility -eq $true) {
 
 			# Mail The Log File With The Results
 			If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-				$context = "SCRIPT ABORT - ERROR: The specified AD forest '$($script:targetedADforestFQDN)' IS NOT accessible!"
+				$context = "SCRIPT ABORT - ERROR: The specified AD forest '$($script:targetedADforestFQDN)' IS NOT accessible! (Script Version: $($script:version))"
 
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
@@ -7560,7 +7694,7 @@ If ($adForestAccessibility -eq $true) {
 
 		# Mail The Log File With The Results
 		If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-			$context = "SCRIPT ABORT - ERROR: The specified AD forest '$($script:targetedADforestFQDN)' IS NOT accessible!"
+			$context = "SCRIPT ABORT - ERROR: The specified AD forest '$($script:targetedADforestFQDN)' IS NOT accessible! (Script Version: $($script:version))"
 
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
@@ -7607,7 +7741,7 @@ If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") 
 		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog ""
 
-		$context = "SCRIPT ABORT - ERROR: The Build Of The Attribute Schema Mapping Tables Failed"
+		$context = "SCRIPT ABORT - ERROR: The Build Of The Attribute Schema Mapping Tables Failed! (Script Version: $($script:version))"
 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 
@@ -7620,7 +7754,7 @@ If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") 
 		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog ""
 
-		$context = "SCRIPT ABORT - ERROR: The Following Attribute DOES NOT Exist In The AD Schema: $($script:resetRoutineAttributeForResetState)"
+		$context = "SCRIPT ABORT - ERROR: The Following Attribute DOES NOT Exist In The AD Schema: $($script:resetRoutineAttributeForResetState) (Script Version: $($script:version))"
 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 
@@ -7633,7 +7767,7 @@ If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") 
 		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog ""
 
-		$context = "SCRIPT ABORT - ERROR: The Following Attribute DOES NOT Exist In The AD Schema: $($script:resetRoutineAttributeForResetDateAction1)"
+		$context = "SCRIPT ABORT - ERROR: The Following Attribute DOES NOT Exist In The AD Schema: $($script:resetRoutineAttributeForResetDateAction1) (Script Version: $($script:version))"
 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 
@@ -7646,7 +7780,7 @@ If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") 
 		writeLog -dataToLog "Aborting Script..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog ""
 
-		$context = "SCRIPT ABORT - ERROR: The Following Attribute DOES NOT Exist In The AD Schema: $($script:resetRoutineAttributeForResetDateAction2)"
+		$context = "SCRIPT ABORT - ERROR: The Following Attribute DOES NOT Exist In The AD Schema: $($script:resetRoutineAttributeForResetDateAction2) (Script Version: $($script:version))"
 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 
@@ -7790,7 +7924,7 @@ If ($adDomainValidity -eq $true) {
 
 	# Mail The Log File With The Results
 	If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-		$context = "SCRIPT ABORT - ERROR: The specified AD domain '$($script:targetedADdomainFQDN)' DOES NOT exist in the AD forest '$($script:targetedADforestFQDN)'!"
+		$context = "SCRIPT ABORT - ERROR: The specified AD domain '$($script:targetedADdomainFQDN)' DOES NOT exist in the AD forest '$($script:targetedADforestFQDN)'! (Script Version: $($script:version))"
 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
@@ -7843,7 +7977,7 @@ If ($modeOfOperationNr -gt 1) {
 
 			# Mail The Log File With The Results
 			If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-				$context = "SCRIPT ABORT - ERROR: The user account '$userAccount' is the local SYSTEM account, but the script in this case is NOT being executed on an RWDC!..."
+				$context = "SCRIPT ABORT - ERROR: The user account '$userAccount' is the local SYSTEM account, but the script in this case is NOT being executed on an RWDC! (Script Version: $($script:version))"
 
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
@@ -7874,7 +8008,7 @@ If ($modeOfOperationNr -gt 1) {
 
 						# Mail The Log File With The Results
 						If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-							$context = "SCRIPT ABORT - ERROR: The user account '$adRunningUserAccount' IS NOT running with Domain/Enterprise Administrator equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)'!"
+							$context = "SCRIPT ABORT - ERROR: The user account '$adRunningUserAccount' IS NOT running with Domain/Enterprise Administrator equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)'! (Script Version: $($script:version))"
 							
 							sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 						}
@@ -7943,7 +8077,7 @@ If ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds))) {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			# Mail The Log File With The Results
 			If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-				$context = "SCRIPT ABORT - ERROR: The user account '$adRunningUserAccount' IS NOT running with Administrators equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)'!"
+				$context = "SCRIPT ABORT - ERROR: The user account '$adRunningUserAccount' IS NOT running with Administrators equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)'! (Script Version: $($script:version))"
 
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
@@ -7977,7 +8111,7 @@ If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds))
 
 		# Mail The Log File With The Results
 		If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-			$context = "SCRIPT ABORT - ERROR: The user account '$adminUserAccountRemoteForest' IS NOT running with Administrators equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)' OR username/password IS NOT correct!"
+			$context = "SCRIPT ABORT - ERROR: The user account '$adminUserAccountRemoteForest' IS NOT running with Administrators equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)' OR username/password IS NOT correct! (Script Version: $($script:version))"
 
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
@@ -8029,7 +8163,7 @@ If ($thisADDomain) {
 	
 	# Retrieve The Domain SID
 	$objectSidBytes = $thisADDomain.GetDirectoryEntry().Properties["objectSid"].Value
-	$targetedADdomainDomainSID = (New-Object System.Security.Principal.SecurityIdentifier($objectSidBytes, 0)).Value
+	$script:targetedADdomainDomainSID = (New-Object System.Security.Principal.SecurityIdentifier($objectSidBytes, 0)).Value
 
 	# Retrieve The HostName Of RWDC In The AD Domain That Hosts The PDC FSMO Role
 	$script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN = $thisADDomain.PdcRoleOwner.Name
@@ -8118,42 +8252,61 @@ If ($thisADDomain) {
 		# Get The List Of GPOs That Were Processed For RSoP So We Can Map The GUID Back To Show Which GPO Won
 		# Determine The Max Tgt Lifetime In Hours From The Winning GPO And The Max Clock Skew In Minutes From The Winning GPO
 		If ($localADforest -eq $true) {
-			# Determine The User Account To Use During RSoP
-			$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainNearestRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $targetedADdomainDomainSID
+			# Try To Determine The User Account To Use During RSoP
+			$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $($script:targetedADdomainDomainSID)
 
-			# Run An RsOP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
-			Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
-
-			# Determine The Kerberos Policy Settings
-			If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml") {
-				[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
-				$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject = determineKerberosPolicySettings -targetedADdomainFQDN $($script:targetedADdomainFQDN) -targetedADdomainNearestRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -execDateTimeCustom $execDateTimeCustom -gpRSoPxml $gpRSoPxml
-
-				Try {
-					Remove-Item "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -Force -ErrorAction Stop
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Removing The RSoP File '$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			} Else {
+			If ($accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP") {
 				$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
 					SettingName   = "MaxTicketAge";
 					SettingValue  = $script:maxTgtLifetimeHrs;
 					SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-					SourceGPOName = "Default Value Assumed";
+					SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
 				}
 				$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
 					SettingName   = "MaxClockSkew";
 					SettingValue  = $script:maxClockSkewMins;
 					SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-					SourceGPOName = "Default Value Assumed";
+					SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
+				}
+			} Else {
+				# Run An RsOP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
+				Try {
+					Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -ErrorAction STOP > $null
+				} Catch {
+					# PLACEHOLDER
+				}
+
+				# Determine The Kerberos Policy Settings
+				If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml") {
+					[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
+					$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject = determineKerberosPolicySettings -gpRSoPxml $gpRSoPxml
+
+					Try {
+						Remove-Item "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -Force -ErrorAction Stop
+					} Catch {
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error Removing The RSoP File '$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					}
+				} Else {
+					$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
+						SettingName   = "MaxTicketAge";
+						SettingValue  = $script:maxTgtLifetimeHrs;
+						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
+						SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
+					}
+					$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
+						SettingName   = "MaxClockSkew";
+						SettingValue  = $script:maxClockSkewMins;
+						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
+						SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
+					}
 				}
 			}
 		}
@@ -8163,7 +8316,7 @@ If ($thisADDomain) {
 			} Else {
 				$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -Credential $adminCrds -ErrorAction Stop
 			}
-			$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject, $accountToChooseForRSoP = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainFQDN), $targetedADdomainDomainSID, $($script:targetedADdomainNearestRWDCFQDN), $execDateTimeCustom, $loggingDef, $loadPoSHModulesDef, $determineUserAccountForRSoPDef, $determineKerberosPolicySettingsDef -ScriptBlock {
+			$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject, $accountToChooseForRSoP = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainFQDN), $($script:targetedADdomainDomainSID), $($script:targetedADdomainNearestRWDCFQDN), $execDateTimeCustom, $loggingDef, $loadPoSHModulesDef, $determineUserAccountForRSoPDef, $determineKerberosPolicySettingsDef -ScriptBlock {
 				Param (
 					$targetedADdomainFQDN,
 					$targetedADdomainDomainSID,
@@ -8189,59 +8342,76 @@ If ($thisADDomain) {
 				}
 
 				If ($poshModuleState -eq "HasBeenLoaded" -Or $poshModuleState -eq "AlreadyLoaded") {
-					# Determine The User Account To Use During RSoP
-					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainNearestRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
+					# Try To Determine The User Account To Use During RSoP
+					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
 
-					# Run An RsOP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
-					Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
-
-					# Determine The Kerberos Policy Settings
-					If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml") {
-						[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
-						$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject = determineKerberosPolicySettings -targetedADdomainFQDN $targetedADdomainFQDN -targetedADdomainNearestRWDCFQDN $targetedADdomainNearestRWDCFQDN -execDateTimeCustom $execDateTimeCustom -gpRSoPxml $gpRSoPxml
-
-						Try {
-							Remove-Item "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -Force -ErrorAction Stop
-						} Catch {
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error Removing The RSoP File '$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						}
-					} Else {
+					If ($accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP") {
 						$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
 							SettingName   = "MaxTicketAge";
 							SettingValue  = $script:maxTgtLifetimeHrs;
 							SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-							SourceGPOName = "Default Value Assumed (Reason: RsOP Failed)";
+							SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
 						}
 						$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
 							SettingName   = "MaxClockSkew";
 							SettingValue  = $script:maxClockSkewMins;
 							SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-							SourceGPOName = "Default Value Assumed (Reason: RsOP Failed)";
+							SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
 						}
-						$accountToChooseForRSoP = $accountToChooseForRSoP + " (Reason: RsOP Failed)"
+					} Else {
+						# Run An RSoP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
+						Try {
+							Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
+						} Catch {
+							# PLACEHOLDER
+						}
+
+						# Determine The Kerberos Policy Settings
+						If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml") {
+							[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
+							$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject = determineKerberosPolicySettings -gpRSoPxml $gpRSoPxml
+
+							Try {
+								Remove-Item "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -Force -ErrorAction Stop
+							} Catch {
+								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "Error Removing The RSoP File '$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							}
+						} Else {
+							$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
+								SettingName   = "MaxTicketAge";
+								SettingValue  = $script:maxTgtLifetimeHrs;
+								SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
+								SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
+							}
+							$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
+								SettingName   = "MaxClockSkew";
+								SettingValue  = $script:maxClockSkewMins;
+								SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
+								SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
+							}
+						}
 					}
 				} Else {
 					$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
 						SettingName   = "MaxTicketAge";
 						SettingValue  = $script:maxTgtLifetimeHrs;
 						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-						SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC)";
+						SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC - Unable To Perform RSoP)";
 					}
 					$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
 						SettingName   = "MaxClockSkew";
 						SettingValue  = $script:maxClockSkewMins;
 						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-						SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC)";
+						SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC - Unable To Perform RSoP)";
 					}
-					$accountToChooseForRSoP = "Unused/Undetermined (Reason: PoSH Module Not Installed On Remote RWDC)"
 				}
 				Return $kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject, $accountToChooseForRSoP
 			}
@@ -8331,7 +8501,7 @@ If ($($script:targetedADdomainDomainFunctionalModeLevel) -ne "Unavailable" -And 
 
 	# Mail The Log File With The Results
 	If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-		$context = "SCRIPT ABORT - ERROR: It CANNOT be determined the specified AD domain '$($script:targetedADdomainFQDN)' has a Domain Functional Mode of 'Windows2008Domain (3)' or higher!"
+		$context = "SCRIPT ABORT - ERROR: It CANNOT be determined the specified AD domain '$($script:targetedADdomainFQDN)' has a Domain Functional Mode of 'Windows2008Domain (3)' or higher! (Script Version: $($script:version))"
 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
@@ -8358,7 +8528,7 @@ $nrOfReachableRWDCs = 0
 $nrOfUnReachableRWDCs = 0
 
 # Execute For All RWDCs In The AD Domain
-writeLog -dataToLog "Processing Data Of All The Discovered Writable DCs (RWDCs) - NO CHANGES!!!..." -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "Processing Data Of All The Discovered Writable DCs (RWDCs) - NO CHANGES MADE!!!..." -logFileOnly $false -noDateTimeInLogLine $false
 $nrOfRWDCsToProcess = ($listOfRWDCsInADDomain | Measure-Object).Count
 $nrOfRWDCsProcessed = 0
 
@@ -8562,7 +8732,7 @@ $nrOfUnDetermined = 0
 # Execute For All RODCs In The AD Domain
 Write-Host ""
 writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-writeLog -dataToLog "Processing Data Of All The Discovered Read-Only DCs (RODCs) - NO CHANGES!!!..." -logFileOnly $false -noDateTimeInLogLine $false
+writeLog -dataToLog "Processing Data Of All The Discovered Read-Only DCs (RODCs) - NO CHANGES MADE!!!..." -logFileOnly $false -noDateTimeInLogLine $false
 $nrOfRODCsToProcess = ($listOfRODCsInADDomain | Measure-Object).Count
 $nrOfRODCsProcessed = 0
 If ($listOfRODCsInADDomain) {
@@ -9007,7 +9177,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 
 		# Mail The Log File With The Results
 		If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-			$context = "SCRIPT ABORT - ERROR: Due to unavailability issues of the RWDC with the PDC FSMO role and/or the nearest RWDC, the script cannot continue"
+			$context = "SCRIPT ABORT - ERROR: Due to unavailability issues of the RWDC with the PDC FSMO role and/or the nearest RWDC, the script cannot continue! (Script Version: $($script:version))"
 
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
@@ -9059,7 +9229,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 		writeLog -dataToLog ""
 
 		If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-			$context = "SCRIPT ABORT - ERROR: A wrong/non-existent target KrbTgt scope was selected!"
+			$context = "SCRIPT ABORT - ERROR: A wrong/non-existent target KrbTgt scope was selected! (Script Version: $($script:version))"
 
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
@@ -9189,7 +9359,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 	If ($continueOrStop.ToUpper() -ne "CONTINUE") {
 		# Mail The Log File With The Results
 		If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-			$context = "SCRIPT - NORMAL OPS: The script was told to stop and not to continue!"
+			$context = "SCRIPT - NORMAL OPS: The script was told to stop and not to continue! (Script Version: $($script:version))"
 
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
@@ -9350,7 +9520,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 					Start-Sleep -s 10
 
 					# Determine The User Account To Use During RSoP
-					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainNearestRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $targetedADdomainDomainSID
+					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $($script:targetedADdomainDomainSID)
 
 					# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
 					Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
@@ -9401,7 +9571,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 					} Else {
 						$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -Credential $adminCrds -ErrorAction Stop
 					}
-					$isRequiredSecurityOptionEnabled, $isRequiredAdvancedAuditSettingsEnabled = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainNearestRWDCFQDN), $($script:targetedADdomainFQDN), $targetedADdomainDomainSID, $execDateTimeCustom, $requiredSecurityOptionAdvAudit, $requiredAdvAuditSettings, $loggingDef, $loadPoSHModulesDef, $determineUserAccountForRSoPDef -ScriptBlock {
+					$isRequiredSecurityOptionEnabled, $isRequiredAdvancedAuditSettingsEnabled = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainNearestRWDCFQDN), $($script:targetedADdomainFQDN), $($script:targetedADdomainDomainSID), $execDateTimeCustom, $requiredSecurityOptionAdvAudit, $requiredAdvAuditSettings, $loggingDef, $loadPoSHModulesDef, $determineUserAccountForRSoPDef -ScriptBlock {
 						Param (
 							$targetedADdomainNearestRWDCFQDN,
 							$targetedADdomainFQDN,
@@ -9432,7 +9602,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 							Start-Sleep -s 10
 
 							# Determine The User Account To Use During RSoP
-							$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainNearestRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
+							$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
 
 							# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
 							Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
@@ -9696,7 +9866,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 							If ([string]::IsNullOrEmpty($targetObjectToCheckDN)) {
 								# Mail The Log File With The Results
 								If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-									$context = "SCRIPT ABORT - ERROR: Failed to create Temporary Canary Object!"
+									$context = "SCRIPT ABORT - ERROR: Failed to create Temporary Canary Object! (Script Version: $($script:version))"
 
 									sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 								}
@@ -10310,7 +10480,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 							$mailAttachments = [System.Collections.Generic.List[Object]]::New()
 							$mailAttachments.Add($suspiciousTicketsFileMonitoringRunGoldenTickets)
 
-							$context = "SCRIPT - NORMAL OPS: Suspicious TGS requests detected!"
+							$context = "SCRIPT - NORMAL OPS: Suspicious TGS requests detected! (Script Version: $($script:version))"
 
 							sendMailMessage -configResetKrbTgtPasswordSettings $script:configResetKrbTgtPasswordSettings -mailAttachments $mailAttachments -context $context
 						}
@@ -10387,7 +10557,7 @@ If ($modeOfOperationNr -eq 8) {
 	If ($continueOrStop.ToUpper() -ne "CONTINUE") {
 		# Mail The Log File With The Results
 		If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-			$context = "SCRIPT - NORMAL OPS: The script was told to stop and not to continue!"
+			$context = "SCRIPT - NORMAL OPS: The script was told to stop and not to continue! (Script Version: $($script:version))"
 
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
@@ -10409,7 +10579,7 @@ If ($modeOfOperationNr -eq 8) {
 	writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 
 	# Execute The Creation TEST/BOGUS KrbTgt Accounts Function To Create The TEST/BOGUS KrbTgt Account For RWDCs
-	createTestKrbTgtADAccount -targetedADdomainRWDCFQDN $targetedADdomainSourceRWDCFQDN -krbTgtInUseByDCFQDN $targetedADdomainSourceRWDCFQDN -krbTgtSamAccountName $krbTgtSamAccountName -krbTgtUse "RWDC" -targetedADdomainDomainSID $targetedADdomainDomainSID -localADforest $localADforest -adminCrds $adminCrds
+	createTestKrbTgtADAccount -targetedADdomainRWDCFQDN $targetedADdomainSourceRWDCFQDN -krbTgtInUseByDCFQDN $targetedADdomainSourceRWDCFQDN -krbTgtSamAccountName $krbTgtSamAccountName -krbTgtUse "RWDC" -targetedADdomainDomainSID $($script:targetedADdomainDomainSID) -localADforest $localADforest -adminCrds $adminCrds
 
 	# For All RODCs In The AD Domain That Do Not Have An Unknown RWDC Specfied
 	$tableOfDCsInADDomain | Where-Object { $_."DS Type" -eq "Read-Only" -And $_."Source RWDC FQDN" -ne "Unknown" } | ForEach-Object {
@@ -10435,7 +10605,7 @@ If ($modeOfOperationNr -eq 8) {
 		writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 
 		# Execute The Create TEST/BOGUS KrbTgt Accounts Function To Create The TEST/BOGUS KrbTgt Account For Each RODC
-		createTestKrbTgtADAccount -targetedADdomainRWDCFQDN $targetedADdomainSourceRWDCFQDN -krbTgtInUseByDCFQDN $rodcFQDNTarget -krbTgtSamAccountName $krbTgtSamAccountName -krbTgtUse "RODC" -targetedADdomainDomainSID $targetedADdomainDomainSID -localADforest $localADforest -adminCrds $adminCrds
+		createTestKrbTgtADAccount -targetedADdomainRWDCFQDN $targetedADdomainSourceRWDCFQDN -krbTgtInUseByDCFQDN $rodcFQDNTarget -krbTgtSamAccountName $krbTgtSamAccountName -krbTgtUse "RODC" -targetedADdomainDomainSID $($script:targetedADdomainDomainSID) -localADforest $localADforest -adminCrds $adminCrds
 	}
 }
 
@@ -10463,7 +10633,7 @@ If ($modeOfOperationNr -eq 9) {
 	If ($continueOrStop.ToUpper() -ne "CONTINUE") {
 		# Mail The Log File With The Results
 		If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
-			$context = "SCRIPT - NORMAL OPS: The script was told to stop and not to continue!"
+			$context = "SCRIPT - NORMAL OPS: The script was told to stop and not to continue! (Script Version: $($script:version))"
 
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
@@ -10534,9 +10704,9 @@ writeLog -dataToLog ""
 # Mail The Log File With The Results
 If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
 	If ($script:numAccntsResetANOMALY -eq 0) {
-		$context = "SCRIPT - NORMAL OPS: Script completed successfully!"
+		$context = "SCRIPT - NORMAL OPS: Script completed successfully! (Script Version: $($script:version))"
 	} Else {
-		$context = "SCRIPT - NORMAL OPS: Script completed successfully, but ANOMALIES were detected (see table below and log file for details)!"
+		$context = "SCRIPT - NORMAL OPS: Script completed successfully, but ANOMALIES were detected (see table below and log file for details)! (Script Version: $($script:version))"
 	}
 
 	sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
