@@ -21,7 +21,7 @@ Param (
 ###
 # Version Of Script
 ###
-$script:version = "v3.7, 2026-01-16"
+$script:version = "v3.8, 2026-02-07"
 
 <#
 	AUTHOR
@@ -102,6 +102,9 @@ $script:version = "v3.7, 2026-01-16"
 			checks for old LOG files and old ZIP files and deletes them accordingly!
 
 	RELEASE NOTES
+		v3.8, 2026-02-07, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+			- Code Improvement: For the function "determineUserAccountForRSoP" updates were made to better process additional scenarios, like e.g. resolving the SID of an account that cannot be found in AD
+
 		v3.7, 2026-01-16, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
 			- Code Improvement: Updated the function "determineUserAccountForRSoP"
 			- Code Improvement: Where applicable updated "$targetedADdomainDomainSID" with "$($script:targetedADdomainDomainSID)"
@@ -5154,72 +5157,92 @@ Function determineUserAccountForRSoP {
 	# Try To Get All User Profiles That Match The Targeted AD Domain Sid
 	Try {
 		$sidOfProfilesOfTargetedDomainOnDC = Get-CimInstance Win32_UserProfile -ComputerName $targetedADdomainRWDCFQDN -ErrorAction STOP | Where-Object { $_.SID -match $targetedADdomainDomainSID } | ForEach-Object { $_.SID }
-		$sidCandidatesOnDC = @()
+		$sidCandidatesOnDC = @{}
 
 		# For Each Scoped User Profile Get The Object Class And The Constructed Attribute "tokenGroupsNoGCAcceptable"
-		$sidOfProfilesOfTargetedDomainOnDC | ForEach-Object {
-			$sidOfProfile = $_
-			$targetObjectToCheckDN = $null
-			$targetObjectToCheck = $null
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-					$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
-					$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		If (($sidOfProfilesOfTargetedDomainOnDC | Measure-Object).Count -gt 0) {
+			$sidOfProfilesOfTargetedDomainOnDC | ForEach-Object {
+				$sidOfProfile = $_
+				$targetObjectToCheckDN = $null
+				$targetObjectToCheck1 = $null
+				$targetObjectToCheck = $null
+				If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
+					Try {
+						$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
+						$targetObjectToCheck1 = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)"
+						If (-not [string]::IsNullOrEmpty($targetObjectToCheck1)) {
+							$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
+							$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","msDS-PrincipalName","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
+						}
+						$ldapConnection.Dispose()
+					} Catch {
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					}
 				}
-			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-					$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
-					$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+					Try {
+						$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
+						$targetObjectToCheck1 = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)"
+						If (-not [string]::IsNullOrEmpty($targetObjectToCheck1)) {
+							$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
+							$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","msDS-PrincipalName","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
+						}
+						$ldapConnection.Dispose()
+					} Catch {
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					}
 				}
-			}
-		
-			# From The List With SIDs In Byte Format, Create A List Wth SIDs In String Format
-			$groupSidsByteFormatForAccount = $targetObjectToCheck.tokenGroupsNoGCAcceptable
-			$groupSidsStringFormatForAccount = @()
-			$groupSidsByteFormatForAccount | ForEach-Object {
-				$sidByteFormat = $_
-				$sidStringFormat = (New-Object System.Security.Principal.SecurityIdentifier($sidByteFormat,0)).Value
-				$groupSidsStringFormatForAccount += $sidStringFormat
-			}
 
-			# If The User Profile Belongs To An Account With Object Class USER And Which Is A Member Of Either Or Both "Administrators" And/Or "Domain Admins" Group, Add It As A Possible Candidate To Choose From
-			If ($targetObjectToCheck.objectClass[-1] -eq "user" -And ($groupSidsStringFormatForAccount.Contains("S-1-5-32-544") -Or $groupSidsStringFormatForAccount.Contains("$targetedADdomainDomainSID-512"))) {
-				$sidCandidatesOnDC += $_
+				If (-not [string]::IsNullOrEmpty($targetObjectToCheck)) {
+					# From The List With SIDs In Byte Format, Create A List Wth SIDs In String Format
+					$groupSidsByteFormatForAccount = $targetObjectToCheck.tokenGroupsNoGCAcceptable
+					$groupSidsStringFormatForAccount = @()
+					$groupSidsByteFormatForAccount | ForEach-Object {
+						$sidByteFormat = $_
+						$sidStringFormat = (New-Object System.Security.Principal.SecurityIdentifier($sidByteFormat,0)).Value
+						$groupSidsStringFormatForAccount += $sidStringFormat
+					}
+
+					# If The User Profile Belongs To An Account With Object Class USER And Which Is A Member Of Either Or Both "Administrators" And/Or "Domain Admins" Group, Add It As A Possible Candidate To Choose From
+					If ($targetObjectToCheck.objectClass[-1] -eq "user" -And ($groupSidsStringFormatForAccount.Contains("S-1-5-32-544") -Or $groupSidsStringFormatForAccount.Contains("$targetedADdomainDomainSID-512"))) {
+						$sidCandidatesOnDC[$sidOfProfile] = $targetObjectToCheck."msDS-PrincipalName"
+					}
+				} Else {
+					# FOR TESTING PURPOSES ONLY! - DO NOT CHANGE!
+					#$sidCandidatesOnDC[$sidOfProfile] = "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP"
+				}
 			}
-		}
-		If ($sidCandidatesOnDC -contains ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value) {
-			$sidToChoose = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-		} ElseIf ($($sidCandidatesOnDC | Measure-Object).Count -gt 0) {
-			$sidToChoose = $sidCandidatesOnDC | Get-Random
+			If (($sidCandidatesOnDC.Keys | Measure-Object).Count -gt 0) {
+				If ($sidCandidatesOnDC.Keys -contains ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value) {
+					$sidToChoose = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+					#$sidToChoose = $sidCandidatesOnDC.Keys | Get-Random # FOR TESTING ONLY - DO NOT USE!
+				} Else {
+					$sidToChoose = $sidCandidatesOnDC.Keys | Get-Random
+				}
+
+				$accountToChooseForRSoP = $sidCandidatesOnDC[$sidToChoose]
+			} Else {
+				$accountToChooseForRSoP = "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP"
+			}
 		} Else {
-			$sidToChoose = $sidOfProfilesOfTargetedDomainOnDC | Get-Random
+			$accountToChooseForRSoP = "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP"
 		}
-		$accountToChooseForRSoP = $(New-Object System.Security.Principal.SecurityIdentifier($sidToChoose)).Translate([System.Security.Principal.NTAccount]).Value
 	} Catch {
 		$accountToChooseForRSoP = "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP"
 	}
@@ -8254,20 +8277,19 @@ If ($thisADDomain) {
 		If ($localADforest -eq $true) {
 			# Try To Determine The User Account To Use During RSoP
 			$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $($script:targetedADdomainDomainSID)
-
-			If ($accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP") {
+			If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
 				$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
 					SettingName   = "MaxTicketAge";
 					SettingValue  = $script:maxTgtLifetimeHrs;
 					SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-					SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
+					SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
 				}
 				$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
 					SettingName   = "MaxClockSkew";
 					SettingValue  = $script:maxClockSkewMins;
 					SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-					SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
-				}
+					SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
+				}				
 			} Else {
 				# Run An RsOP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
 				Try {
@@ -8344,19 +8366,18 @@ If ($thisADDomain) {
 				If ($poshModuleState -eq "HasBeenLoaded" -Or $poshModuleState -eq "AlreadyLoaded") {
 					# Try To Determine The User Account To Use During RSoP
 					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
-
-					If ($accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP") {
+					If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
 						$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
 							SettingName   = "MaxTicketAge";
 							SettingValue  = $script:maxTgtLifetimeHrs;
 							SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-							SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
+							SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
 						}
 						$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
 							SettingName   = "MaxClockSkew";
 							SettingValue  = $script:maxClockSkewMins;
 							SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-							SourceGPOName = "Default Value Assumed (Reason: Unable To Determine Account For RSoP)";
+							SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
 						}
 					} Else {
 						# Run An RSoP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
@@ -9521,48 +9542,54 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 
 					# Determine The User Account To Use During RSoP
 					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $($script:targetedADdomainDomainSID)
-
-					# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
-					Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
-
-					# Determine If The Required Security Option Is Configured And If The Required Advanced Auditing Setting Is Configured As Needed
-					If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml") {
-						[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
-						$gpoList = @{}
-						$gpoList["NONE"] = "NONE_AVAILABLE"
-						(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object { $gpoList.Add($_.Path.Identifier."#text", $_.Name) }
-						$rsopSecurityOptions = ((Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension | Where-Object { Get-Member -InputObject $_ -Name SecurityOptions }).SecurityOptions | Where-Object { Get-Member -InputObject $_ -Name KeyName }
-						$gpoWithRequiredSecurityOptionGpoGuid = $null
-						If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) })))) {
-							$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
-							$isRequiredSecurityOptionEnabled = $true
-						} Else {
-							$gpoWithRequiredSecurityOptionGpoGuid = "NONE"
-							$isRequiredSecurityOptionEnabled = $false
-						}
-						writeLog -dataToLog "  --> Current GPO With Required Security Option: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+					If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
+						$isRequiredSecurityOptionEnabled = $false
+						$isRequiredAdvancedAuditSettingsEnabled = $false
+						writeLog -dataToLog "  --> No Valid Account Could Be Found To Execute RSoP..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 						writeLog -dataToLog ""
-						$rsopAdvancedAuditSettings = ((Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension | Where-Object { Get-Member -InputObject $_ -Name AuditSetting }).AuditSetting
-						$gpoWithRequiredAdvancedAuditSettingsGpoGuid = $null
-						If (-not ([string]::IsNullOrEmpty($($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) })))) {
-							If ($(($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).SettingValue -band $($requiredAdvAuditSettings.Split("|")[3])) -eq $($requiredAdvAuditSettings.Split("|")[3])) {
-								$gpoWithRequiredAdvancedAuditSettingsGpoGuid = ($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).GPO.Identifier.'#text'
-								$isRequiredAdvancedAuditSettingsEnabled = $true
+					} Else {
+						# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
+						Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
+
+						# Determine If The Required Security Option Is Configured And If The Required Advanced Auditing Setting Is Configured As Needed
+						If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml") {
+							[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
+							$gpoList = @{}
+							$gpoList["NONE"] = "NONE_AVAILABLE"
+							(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object { $gpoList.Add($_.Path.Identifier."#text", $_.Name) }
+							$rsopSecurityOptions = ((Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension | Where-Object { Get-Member -InputObject $_ -Name SecurityOptions }).SecurityOptions | Where-Object { Get-Member -InputObject $_ -Name KeyName }
+							$gpoWithRequiredSecurityOptionGpoGuid = $null
+							If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) })))) {
+								$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
+								$isRequiredSecurityOptionEnabled = $true
+							} Else {
+								$gpoWithRequiredSecurityOptionGpoGuid = "NONE"
+								$isRequiredSecurityOptionEnabled = $false
+							}
+							writeLog -dataToLog "  --> Current GPO With Required Security Option: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+							writeLog -dataToLog ""
+							$rsopAdvancedAuditSettings = ((Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension | Where-Object { Get-Member -InputObject $_ -Name AuditSetting }).AuditSetting
+							$gpoWithRequiredAdvancedAuditSettingsGpoGuid = $null
+							If (-not ([string]::IsNullOrEmpty($($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) })))) {
+								If ($(($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).SettingValue -band $($requiredAdvAuditSettings.Split("|")[3])) -eq $($requiredAdvAuditSettings.Split("|")[3])) {
+									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = ($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).GPO.Identifier.'#text'
+									$isRequiredAdvancedAuditSettingsEnabled = $true
+								} Else {
+									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
+									$isRequiredAdvancedAuditSettingsEnabled = $false
+								}
 							} Else {
 								$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
 								$isRequiredAdvancedAuditSettingsEnabled = $false
 							}
+							writeLog -dataToLog "  --> Current GPO With Required Advanced Auditing Setting: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+							writeLog -dataToLog ""
 						} Else {
-							$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
+							$isRequiredSecurityOptionEnabled = $false
 							$isRequiredAdvancedAuditSettingsEnabled = $false
+							writeLog -dataToLog "  --> The Execution Of The RSoP Failed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							writeLog -dataToLog ""
 						}
-						writeLog -dataToLog "  --> Current GPO With Required Advanced Auditing Setting: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog ""
-					} Else {
-						$isRequiredSecurityOptionEnabled = $false
-						$isRequiredAdvancedAuditSettingsEnabled = $false
-						writeLog -dataToLog "  --> The Execution Of The RSoP Failed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog ""
 					}
 				}
 				If ($localADforest -eq $false) {
@@ -9603,48 +9630,54 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 
 							# Determine The User Account To Use During RSoP
 							$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
-
-							# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
-							Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
-
-							# Determine If The Required Security Option Is Configured And If The Required Advanced Auditing Setting Is Configured As Needed
-							If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml") {
-								[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
-								$gpoList = @{}
-								$gpoList["NONE"] = "NONE_AVAILABLE"
-								(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object { $gpoList.Add($_.Path.Identifier."#text", $_.Name) }
-								$rsopSecurityOptions = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension.SecurityOptions
-								$gpoWithRequiredSecurityOptionGpoGuid = $null
-								If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) })))) {
-									$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
-									$isRequiredSecurityOptionEnabled = $true
-								} Else {
-									$gpoWithRequiredSecurityOptionGpoGuid = "NONE"
-									$isRequiredSecurityOptionEnabled = $false
-								}
-								writeLog -dataToLog "  --> Current GPO With Required Security Option: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+							If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
+								$isRequiredSecurityOptionEnabled = $false
+								$isRequiredAdvancedAuditSettingsEnabled = $false
+								writeLog -dataToLog "  --> No Valid Account Could Be Found To Execute RSoP..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 								writeLog -dataToLog ""
-								$rsopAdvancedAuditSettings = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension.AuditSetting
-								$gpoWithRequiredAdvancedAuditSettingsGpoGuid = $null
-								If (-not ([string]::IsNullOrEmpty($($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) })))) {
-									If ($(($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).SettingValue -band $($requiredAdvAuditSettings.Split("|")[3])) -eq $($requiredAdvAuditSettings.Split("|")[3])) {
-										$gpoWithRequiredAdvancedAuditSettingsGpoGuid = ($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).GPO.Identifier.'#text'
-										$isRequiredAdvancedAuditSettingsEnabled = $true
+							} Else {
+								# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
+								Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
+
+								# Determine If The Required Security Option Is Configured And If The Required Advanced Auditing Setting Is Configured As Needed
+								If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml") {
+									[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
+									$gpoList = @{}
+									$gpoList["NONE"] = "NONE_AVAILABLE"
+									(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object { $gpoList.Add($_.Path.Identifier."#text", $_.Name) }
+									$rsopSecurityOptions = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension.SecurityOptions
+									$gpoWithRequiredSecurityOptionGpoGuid = $null
+									If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) })))) {
+										$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
+										$isRequiredSecurityOptionEnabled = $true
+									} Else {
+										$gpoWithRequiredSecurityOptionGpoGuid = "NONE"
+										$isRequiredSecurityOptionEnabled = $false
+									}
+									writeLog -dataToLog "  --> Current GPO With Required Security Option: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+									writeLog -dataToLog ""
+									$rsopAdvancedAuditSettings = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension.AuditSetting
+									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = $null
+									If (-not ([string]::IsNullOrEmpty($($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) })))) {
+										If ($(($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).SettingValue -band $($requiredAdvAuditSettings.Split("|")[3])) -eq $($requiredAdvAuditSettings.Split("|")[3])) {
+											$gpoWithRequiredAdvancedAuditSettingsGpoGuid = ($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).GPO.Identifier.'#text'
+											$isRequiredAdvancedAuditSettingsEnabled = $true
+										} Else {
+											$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
+											$isRequiredAdvancedAuditSettingsEnabled = $false
+										}
 									} Else {
 										$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
 										$isRequiredAdvancedAuditSettingsEnabled = $false
 									}
+									writeLog -dataToLog "  --> Current GPO With Required Advanced Auditing Setting: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+									writeLog -dataToLog ""
 								} Else {
-									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
+									$isRequiredSecurityOptionEnabled = $false
 									$isRequiredAdvancedAuditSettingsEnabled = $false
+									writeLog -dataToLog "  --> The Execution Of The RSoP Failed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+									writeLog -dataToLog ""
 								}
-								writeLog -dataToLog "  --> Current GPO With Required Advanced Auditing Setting: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog ""
-							} Else {
-								$isRequiredSecurityOptionEnabled = $false
-								$isRequiredAdvancedAuditSettingsEnabled = $false
-								writeLog -dataToLog "  --> The Execution Of The RSoP Failed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog ""
 							}
 						} Else {
 							$isRequiredSecurityOptionEnabled = $false
@@ -9666,9 +9699,9 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 				} Else {
 					# If Both/Either The Required Security Option And/Or The Required Advanced Auditing Setting Are NOT In Place, Abort
 					writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Both/Either The Required Security Option And/Or The Required Advanced Auditing Setting Are NOT In Use By DCs In The AD Domain '$($script:targetedADdomainFQDN)'!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Both/Either The Required Security Option And/Or The Required Advanced Auditing Setting Are NOT In Use By DCs In The AD Domain '$($script:targetedADdomainFQDN)', Or RSoP Failed Due To Not Being Able To Find An Account!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Please Re-Run The Script AFTER Configuring The Required Security Option And/Or The Required Advanced Auditing Setting In A GPO That Targets All DCs In The AD Domain '$($script:targetedADdomainFQDN)'..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Please Re-Run The Script AFTER Configuring The Required Security Option And/Or The Required Advanced Auditing Setting In A GPO That Targets All DCs In The AD Domain '$($script:targetedADdomainFQDN)', Or Make Sure A Valid Account Exists On The '$targetedADdomainNearestRWDCFQDN'..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "Aborting Script..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false

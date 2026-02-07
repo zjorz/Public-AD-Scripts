@@ -2,7 +2,9 @@
 
 ## CURRENT version
 
-v3.7 - 2026-01-16
+v3.8 - 2026-02-07
+
+REMARK: other versions of this script exist in other locations and/or in other forms. None of those clones are supported nor maintained by me in any way. Have issues? Update to the latest version available referenced in THIS page and try/test whatever you wanted to try/test. Still have issues? Raise an issue on [GITHUB](https://github.com/zjorz/Public-AD-Scripts/issues)
 
 ## DISCLAIMER
 
@@ -143,6 +145,8 @@ AUTOMATED TESTING (PASSWORD RESET ROUTINE)
 &nbsp;
 
 ## RELEASE NOTES
+* v3.8, 2026-02-07, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+  * Code Improvement: For the function "determineUserAccountForRSoP" updates were made to better process additional scenarios, like e.g. resolving the SID of an account that cannot be found in AD
 * v3.7, 2026-01-16, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
   * Code Improvement: Updated the function "determineUserAccountForRSoP"
   * Code Improvement: Where applicable updated "$targetedADdomainDomainSID" with "$($script:targetedADdomainDomainSID)"
