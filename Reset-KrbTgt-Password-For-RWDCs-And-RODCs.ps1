@@ -3800,83 +3800,94 @@ Function cleanUpOldLogs {
 
 ### FUNCTION: Test Resolving The Server Name And Connectivity Over The Specified TCP Port
 Function portConnectionCheck {
-	<#
-		.SYNOPSIS
-			This Code Checks If A Specific TCP Port Is Open/Reachable For The Defined Server
+    <#
+        .SYNOPSIS
+            This Code Checks If A Specific TCP Port Is Open/Reachable For The Defined Server
 
-		.DESCRIPTION
-			This Code Checks If A Specific TCP Port Is Open/Reachable For The Defined Server
+        .DESCRIPTION
+            This Code Checks If A Specific TCP Port Is Open/Reachable For The Defined Server
 
-		.PARAMETER serverIPOrFQDN
-			The IP Address Or FQDN Of The Server To Check Against.
+        .PARAMETER serverIPOrFQDN
+            The IP Address Or FQDN Of The Server To Check Against.
 
-		.PARAMETER port
-			The Numeric Value For A Specific Port That Needs To Be Checked
+        .PARAMETER port
+            The Numeric Value For A Specific Port That Needs To Be Checked
 
-		.PARAMETER timeOut
-			The Number Of Milliseconds For The Time Out
-	#>
+        .PARAMETER timeOut
+            The Number Of Milliseconds For The Time Out
+    #>
 
-	[cmdletbinding()]
-	Param(
-		[Parameter(Mandatory = $TRUE)]
-		[string]$serverIPOrFQDN,
+    [cmdletbinding()]
+    Param(
+        [Parameter(Mandatory = $TRUE)]
+        [string]$serverIPOrFQDN,
 
-		[Parameter(Mandatory = $TRUE)]
-		[int]$port,
+        [Parameter(Mandatory = $TRUE)]
+        [int]$port,
 
-		[Parameter(Mandatory = $FALSE)]
-		[int]$timeOut
-	)
+        [Parameter(Mandatory = $FALSE)]
+        [int]$timeOut
+    )
 
-	Begin {
-		If ([int]$timeOut -eq 0) {
-			[int]$timeOut = 1000
-		}
-	}
+    Begin {
+        If ([int]$timeOut -eq 0) {
+            [int]$timeOut = 1000
+        }
+    }
 
-	Process {
-		# Validate If An IP Address Has Been Provided, And If NOT Try To Resolve The FQDN
-		$regexIPv4 = "^(?:(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)\.){3}(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)$"
-		If ($serverIPOrFQDN -notmatch $regexIPv4) {
-			# Test To See If The HostName Is Resolvable At All
-			Try {
-				[System.Net.Dns]::GetHostEntry($serverIPOrFQDN) > $null
-			} Catch {
-				Return "ERROR"
-			}
-		}
+    Process {
+        # Validate If An IP Address Has Been Provided, And If NOT Try To Resolve The FQDN
+        $regexIPv4 = "^(?:(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)\.){3}(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)$"
+        If ($serverIPOrFQDN -notmatch $regexIPv4) {
+            # Optimization: Resolve DNS once and filter for IPv4 immediately
+            Try {
+                $dnsEntry = [System.Net.Dns]::GetHostEntry($serverIPOrFQDN)
+                $serverIP = $dnsEntry.AddressList | Where-Object { $_.AddressFamily -eq 'InterNetwork' }
+            } Catch {
+                # DNS Resolution failed completely
+                Return "ERROR"
+            }
 
-		# Test If The Server Is Reachable Over The Specified TCP Port
-		$tcpPortSocket = $null
-		$tcpPortSocket = New-Object System.Net.Sockets.TcpClient
+            # Safety check: DNS worked, but maybe no IPv4 addresses were found?
+            If (-not $serverIP) {
+                Return "ERROR"
+            }
+        } Else {
+            # It's already an IP address
+            $serverIP = $serverIPOrFQDN
+        }
 
-		$portConnect = $null
-		$portConnect = $tcpPortSocket.BeginConnect($serverIPOrFQDN, $port, $null, $null)
+        # Test If The Server Is Reachable Over The Specified TCP Port
+        $tcpPortSocket = $null
+        $tcpPortSocket = New-Object System.Net.Sockets.TcpClient
 
-		$tcpPortWait = $null
-		$tcpPortWait = $portConnect.AsyncWaitHandle.WaitOne($timeOut, $false)
+        $portConnect = $null
+		# Using FQDN in System.Net.Sockets.TcpClient from localhost (on RWDC) may resolve loopback IPv6 address -> if IPv6 is disabled, portConnectionCheck will fail
+        $portConnect = $tcpPortSocket.BeginConnect($serverIP, $port, $null, $null)
 
-		If (!$tcpPortWait) {
-			$tcpPortSocket.Close()
+        $tcpPortWait = $null
+        $tcpPortWait = $portConnect.AsyncWaitHandle.WaitOne($timeOut, $false)
 
-			Return "ERROR"
-		} Else {
-			$ErrorActionPreference = "SilentlyContinue"
+        If (!$tcpPortWait) {
+            $tcpPortSocket.Close()
 
-			$tcpPortSocket.EndConnect($portConnect) > $null
-			If (!$?) {
-				Return "ERROR"
-			} Else {
-				Return "SUCCESS"
-			}
-
-			$tcpPortSocket.Close()
-
-			$ErrorActionPreference = "Continue"
-		}
-	}
-}
+            Return "ERROR"
+        } Else {
+            $ErrorActionPreference = "SilentlyContinue"
+			
+            $tcpPortSocket.EndConnect($portConnect) > $null
+            If (!$?) {
+                Return "ERROR"
+            } Else {
+                Return "SUCCESS"
+            }
+			
+            $tcpPortSocket.Close()
+			
+            $ErrorActionPreference = "Continue"
+        }
+    }
+} 
 
 ### FUNCTION: Load Required PowerShell Modules
 Function loadPoSHModules {
@@ -10743,4 +10754,5 @@ If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
 	}
 
 	sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
+
 }
