@@ -2,7 +2,7 @@
 
 ## CURRENT version
 
-v3.9 - 2026-02-16
+v4.0 - 2026-04-06
 
 > [!WARNING]
 > Other versions of this script exist in other locations and/or in other forms. None of those clones are supported nor maintained by me in any way. Have issues? Update to the latest version available referenced in THIS page and try/test whatever you wanted to try/test. Still have issues? Raise an issue on [GITHUB](https://github.com/zjorz/Public-AD-Scripts/issues)
@@ -123,6 +123,7 @@ AUTOMATED TESTING (PASSWORD RESET ROUTINE)
 ## KNOWN ISSUES/BUGS
 
 * The script is NOT digitally signed
+* The script DOES NOT work with PowerShell ISE!
 * Make sure to unblock the script using the 'Unblock-File' CMDLet after downloading from the internet
 
 * When targeting a remote AD forest for which no trust exist with the AD forest the running account belongs to, the public profile of WinRM may be used. In that case the PSSession for 'Get-GPOReport' may fail due to the default firewall exception only allowing access from remote computers on the same local subnet. In that case the default 'MaxTicketAge' (default 10 hours) and 'MaxClockSkew' (default 5 minutes) is used instead. You may see the following error:
@@ -141,14 +142,23 @@ AUTOMATED TESTING (PASSWORD RESET ROUTINE)
   * When testing the port connection, the target RWDC responds back fast enough within the defined timeout (default 1000 ms)
 * When simulating the password reset (mode 3 for TEST/BOGUS KrbTgt accounts, and mode 5 for PROD/REAL KrbTgt accounts), the script still performs an AD convergence check as if a password reset had occurred for the targeted KrbTgt account(s). The script will in this case log clearly: "REMARK: What If Mode! NO PASSWORD RESET HAS OCCURRED!"
 * When executing the Password Reset Routing (mode 4 for TEST/BOGUS KrbTgt accounts, and mode 6 for PROD/REAL KrbTgt accounts), the script performs an AD convergence check whether or not the password reset has occurred for the targeted KrbTgt account(s). If the password WAS NOT reset for the targeted KrbTgt account, the script logs clearly: "NO PASSWORD HAS BEEN SET FOR [&lt;Distinguished Name Of Targeted KrbTgt Account&gt;]". If the password WAS reset for the targeted KrbTgt account, the script logs clearly: "THE NEW PASSWORD FOR [&lt;Distinguished Name Of Targeted KrbTgt Account&gt;] HAS BEEN SET on RWDC [&lt;FQDN Of Targeted RWDC For The Change&gt;]!"
-* The script expects to find real DCs (RWDCs and RODCs!) in the default domain controllers OU, and NOT outside of that OU!
 * When using the mailing function, NO check is done for expiring credentials (secrets, certificates, etc.)
 * When using the script through Remote PowerShell (WinRM), you will hit the double-hop issue as explained in <https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/ps-remoting-second-hop>.	When connecting to a specific RWDC using some credentials to execute the script on that specific RWDC, and when that specific RWDC connects to other RWDCs to either perform an RSoP to determine the Max TGT lifetime, perform the Replicate Single Object" operation or to query if the password has replicated to the other RWDC, authentication issues will occur as the credentials used to connect to the specific RWDC are not passed to the other RWDCs. A workaround for this is to create an on-demand scheduled task on a specific RWDC, and then through Remote PowerShell run the Scheduled Task.
 * If mail functionality is used (-sendMailWithLogFile), at the the log file will be zipped and mailed as an attachment. A few seconds after sending the mail, the script tries to delete the ZIP file while keeping the original. Sometimes that may fail because the file is locked. That is not a problem as every time the script runs, it checks for old LOG files and old ZIP files and deletes them accordingly!
+* If Remote Credential Guard is in use, the script may or may not work depending on the scenario when running it on demand. When using RDP with Remote Credential Guard, credentials are not send to the remote host. Because of that access is only possible on the remote host and its own domain data and NOT outside of that. Therefore, when trying to connect to another AD domain within or outside of the AD forest, it will fail with the error "Username or password is incorrect". When using Remote Credential Guard, the following applies:
+  * RDP to DC in forest root AD domain with Enterprise/Domain Admins credentials and trying to reset the KRBTGT in the forest root AD domain --> WORKS!
+  * RDP to DC in forest root AD domain with Enterprise Admins credentials and trying to reset the KRBTGT in any other AD domain than the forest root AD domain --> DOES NOT WORK!
+  * RDP to DC in any other AD domain than the forest root AD domain with Enterprise/Domain Admins credentials and trying to reset the KRBTGT in in any other AD domain than the forest root AD domain --> DOES NOT WORK!
+  For more details about Remote Credential Guard, please see: https://learn.microsoft.com/en-us/windows/security/identity-protection/remote-credential-guard
+  Possible workaround is to use automation and use a scheduled task on an RWDC for each AD domain and run the scheduled task as NT AUTHORITY\SYSTEM
 
 &nbsp;
 
 ## RELEASE NOTES
+* v4.0, 2026-04-06, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+  * Code Improvement: Updated the function "portConnectionCheck" to better deal with multiple IPV4 addresses on either a single NIC, or multiple NICs (i.e. multi-homed) where all IPv4 have the same A record in DNS
+  * Code Improvement: Added a check when no RWDCs are discovered in the AD domain within the OU 'Domain Controllers' and primaryGroupID 516 (RWDC) or 521 (RODC). It will then try to rediscover the DCs within the AD domain, report on those and finally abort the script.
+  * Bug Fix: Fixed the comparison of variables with numeric values that were being treated as string instead of integer when using the Password Reset Routine
 * v3.9, 2026-02-16, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
   * Code Improvement: Updated the function "portConnectionCheck" to better deal with IPV4/IPv6 Address combinations and also use the IPv4 Address over IPv6 Address
 * v3.8, 2026-02-07, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
@@ -561,6 +571,8 @@ Execute The Script - Automated Password Reset Routine And Sending The Log File T
 * Minimum required PowerShell version: 5.1 (it is being checked and enforced!)
 * Required PoSH CMDlets: GPMC PoSH CMDlets on all targeted RWDCs!!! (and the S.DS.P Posh CMDlets are INCLUDED in this script!)
 * The script must either be executed from PowerShell or Windows Terminal. PowerShell ISE IS NOT supported!
+* The script expects to find real DCs (RWDCs and RODCs!) in line of the default domain controllers OU, and NOT outside of that OU!
+* The script expects that all RWDCs have a primaryGroupID of 516, and that all RODCs have a primaryGroupID of 521
 * To execute this script, the account running the script MUST be a member of the "Domain Admins" or Administrators group in the targeted AD domain.
 * If the account used is from another AD domain in the same AD forest, then the account running the script MUST be a member of the "Enterprise Admins" group in the AD forest or Administrators group in the targeted AD domain. For all AD domains in the same AD forest, membership of the "Enterprise Admins" group is easier as by default it is a member of the Administrators group in every AD domain in the AD forest
 * If the account used is from another AD domain in another AD forest, then the account running the script MUST be a member of the "Administrators" group in the targeted AD domain. This also applies to any other target AD domain in that same AD forest

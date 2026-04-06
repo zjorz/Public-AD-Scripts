@@ -21,7 +21,7 @@ Param (
 ###
 # Version Of Script
 ###
-$script:version = "v3.9, 2026-02-16"
+$script:version = "v4.0, 2026-04-06"
 
 <#
 	AUTHOR
@@ -57,6 +57,7 @@ $script:version = "v3.9, 2026-02-16"
 
 	KNOWN ISSUES/BUGS
 		- The script is NOT digitally signed
+		- The script DOES NOT work with PowerShell ISE!
 		- Make sure to unblock the script using the 'Unblock-File' CMDLet after downloading from the internet
 		- When targeting a remote AD forest for which no trust exist with the AD forest the running account belongs to, the public profile of WinRM may be
 			used. In that case the PSSession for 'Get-GPOReport' may fail due to the default firewall exception only allowing access from remote computers
@@ -90,18 +91,34 @@ $script:version = "v3.9, 2026-02-16"
 			If the password WAS NOT reset for the targeted KrbTgt account, the script logs clearly: "NO PASSWORD HAS BEEN SET FOR [<Distinguished Name Of Targeted KrbTgt Account>]"
 			If the password WAS reset for the targeted KrbTgt account, the script logs clearly: "THE NEW PASSWORD FOR [<Distinguished Name Of Targeted KrbTgt Account>]
 			HAS BEEN SET on RWDC [<FQDN Of Targeted RWDC For The Change>]!"
-		- The script expects to find real DCs (RWDCs and RODCs!) in the default domain controllers OU, and NOT outside of that OU!
 		- When using the mailing function, NO check is done for expiring credentials (secrets, certificates, etc.)
 		- When using the script through Remote PowerShell (WinRM), you will hit the double-hop issue as explained in https://learn.microsoft.com/en-us/powershell/scripting/security/remoting/ps-remoting-second-hop
-			When connecting to a specific RWDC using some credentials to execute the script on that specific RWDC, and when that specific RWDC connects to other RWDCs
-			to either perform an RSoP to determine the Max TGT lifetime, perform the Replicate Single Object" operation or to query if the password has replicated
-			to the other RWDC, authentication issues will occur as the credentials used to connect to the specific RWDC are not passed to the other RWDCs. A
-			workaround for this is to create an on-demand scheduled task on a specific RWDC, and then through Remote PowerShell run the Scheduled Task.
-		- If mail functionality is used (-sendMailWithLogFile), at the the log file will be zipped and mailed as an attachment. A few seconds after sending the mail, the script
-			tries to delete the ZIP file while keeping the original. Sometimes that may fail because the file is locked. That is not a problem as every time the script runs, it
-			checks for old LOG files and old ZIP files and deletes them accordingly!
+			When connecting to a specific RWDC using some credentials to execute the script on that specific RWDC, and when that specific RWDC connects to
+			other RWDCs to either perform an RSoP to determine the Max TGT lifetime, perform the Replicate Single Object" operation or to query if the
+			password has replicated to the other RWDC, authentication issues will occur as the credentials used to connect to the specific RWDC are not
+			passed to the other RWDCs. A workaround for this is to create an on-demand scheduled task on a specific RWDC, and then through Remote PowerShell
+			run the Scheduled Task.
+		- If mail functionality is used (-sendMailWithLogFile), at the the log file will be zipped and mailed as an attachment. A few seconds after sending
+			the mail, the script tries to delete the ZIP file while keeping the original. Sometimes that may fail because the file is locked. That is not a
+			problem as every time the script runs, it checks for old LOG files and old ZIP files and deletes them accordingly!
+		- If Remote Credential Guard is in use, the script may or may not work depending on the scenario when running it on demand. When using RDP with
+			Remote Credential Guard, credentials are not send to the remote host. Because of that access is only possible on the remote host and its own domain
+			data and NOT outside of that. Therefore, when trying to connect to another AD domain within or outside of the AD forest, it will fail with
+			the error "Username or password is incorrect". When using Remote Credential Guard, the following applies:
+			* RDP to DC in forest root AD domain with Enterprise/Domain Admins credentials and trying to reset the KRBTGT in the forest root AD domain --> WORKS!
+			* RDP to DC in forest root AD domain with Enterprise Admins credentials and trying to reset the KRBTGT in any other AD domain than the forest
+				root AD domain --> DOES NOT WORK!
+			* RDP to DC in any other AD domain than the forest root AD domain with Enterprise/Domain Admins credentials and trying to reset the KRBTGT in in any
+				other AD domain than the forest root AD domain --> DOES NOT WORK!
+			For more details about Remote Credential Guard, please see: https://learn.microsoft.com/en-us/windows/security/identity-protection/remote-credential-guard
+			Possible workaround is to use automation and use a scheduled task on an RWDC for each AD domain and run the scheduled task as NT AUTHORITY\SYSTEM
 
 	RELEASE NOTES
+		v4.0, 2026-04-06, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+			- Code Improvement: Updated the function "portConnectionCheck" to better deal with multiple IPV4 addresses on either a single NIC, or multiple NICs (i.e. multi-homed) where all IPv4 have the same A record in DNS
+			- Code Improvement: Added a check when no RWDCs are discovered in the AD domain within the OU 'Domain Controllers' and primaryGroupID 516 (RWDC) or 521 (RODC). It will then try to rediscover the DCs within the AD domain, report on those and finally abort the script.
+			- Bug Fix: Fixed the comparison of variables with numeric values that were being treated as string instead of integer when using the Password Reset Routine
+
 		v3.9, 2026-02-16, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
 			- Code Improvement: Updated the function "portConnectionCheck" to better deal with IPV4/IPv6 Address combinations and also use the IPv4 Address over IPv6 Address
 
@@ -574,8 +591,10 @@ $script:version = "v3.9, 2026-02-16"
 	- Minimum required PowerShell version: 5.1 (it is being checked and enforced!)
 	- Required PoSH CMDlets: GPMC PoSH CMDlets on all targeted RWDCs!!! (and the S.DS.P Posh CMDlets are INCLUDED in this script!)
 	- The script must either be executed from PowerShell or Windows Terminal. PowerShell ISE IS NOT supported!
+	- The script expects to find real DCs (RWDCs and RODCs!) in line of the default domain controllers OU, and NOT outside of that OU!
+	- The script expects that all RWDCs have a primaryGroupID of 516, and that all RODCs have a primaryGroupID of 521
 	- To execute this script, the account running the script MUST be a member of the "Domain Admins" or Administrators group in the
-		targeted AD domain.
+		targeted AD domain and those memberships MUST be active in the Kerberos ticket
 	- If the account used is from another AD domain in the same AD forest, then the account running the script MUST be a member of the
 		"Enterprise Admins" group in the AD forest or Administrators group in the targeted AD domain. For all AD domains in the same
 		AD forest, membership of the "Enterprise Admins" group is easier as by default it is a member of the Administrators group in
@@ -3836,61 +3855,95 @@ Function portConnectionCheck {
 		If ([int]$timeOut -eq 0) {
 			[int]$timeOut = 1000
 		}
+
+		$result = "ERROR"
+		$regexIPv4 = "^(?:(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)\.){3}(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)$"
+		$serverIPv4s = @()
 	}
 
 	Process {
 		# Validate If An IP Address Has Been Provided, And If NOT Try To Resolve The FQDN
-		$regexIPv4 = "^(?:(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)\.){3}(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)$"
 		If ($serverIPOrFQDN -notmatch $regexIPv4) {
 			# Get The DNS Host Entry And Resolve To An IPv4 Address
 			$dnsHostEntry = $null
-			$serverIPv4 = $null
 			Try {
 				$dnsHostEntry = [System.Net.Dns]::GetHostEntry($serverIPOrFQDN)
-				$serverIPv4 = ($dnsHostEntry.AddressList | Where-Object {$_.AddressFamily -eq "InterNetwork"}).IPAddressToString
-				# Write-Host "Host FQDN...........: $serverIPOrFQDN" # FOR TESTING ONLY
-				# Write-Host "Host IPv4 Address...: $serverIPv4"     # FOR TESTING ONLY
+				($dnsHostEntry.AddressList | Where-Object {$_.AddressFamily -eq "InterNetwork"}).IPAddressToString | ForEach-Object {
+					$serverIPv4s += $_
+				}
 			} Catch {
-				Return "ERROR"
-			}
-
-			# If No IPv4 Address Exists, Return An Error
-			If ([string]::IsNullOrEmpty($serverIPv4)) {
-				Return "ERROR"
+				# FOR TESTING ONLY
+				<#
+				Write-Host "Name Failed To Resolve..." -ForegroundColor Red
+				#>
+				
+				Return $result
 			}
 		} Else {
-			$serverIPv4 = $serverIPOrFQDN
-			# Write-Host "Host IPv4 Address...: $serverIPv4"     # FOR TESTING ONLY
+			$serverIPv4s += $serverIPOrFQDN
 		}
 
-		# Test If The Server Is Reachable Over The Specified TCP Port
-		$tcpPortSocket = $null
-		$tcpPortSocket = New-Object System.Net.Sockets.TcpClient
+		# FOR TESTING ONLY
+		<#
+		Write-Host "Host FQDN...........: $serverIPOrFQDN"
+		$serverIPv4s | ForEach-Object {
+			$serverIPv4 = $_
+			Write-Host "Host IPv4 Address...: $serverIPv4"
+		}
+		Write-Host ""
+		#>
 
-		$portConnect = $null
-		$portConnect = $tcpPortSocket.BeginConnect($serverIPv4, $port, $null, $null)
+		# For Each IP In The List Test If The Server Is Reachable Over The Specified TCP Port
+		If (($serverIPv4s | Measure-Object).Count -gt 0) { # If No IPv4 Address Exists, Return An Error
+			$serverIPv4s | ForEach-Object {
+				$serverIPv4 = $_
+				
+				If ($result -eq "ERROR") {
+					$tcpPortSocket = $null
+					$tcpPortSocket = New-Object System.Net.Sockets.TcpClient
 
-		$tcpPortWait = $null
-		$tcpPortWait = $portConnect.AsyncWaitHandle.WaitOne($timeOut, $false)
+					$portConnect = $null
+					$portConnect = $tcpPortSocket.BeginConnect($serverIPv4, $port, $null, $null)
 
-		If (!$tcpPortWait) {
-			$tcpPortSocket.Close()
+					$tcpPortWait = $null
+					$tcpPortWait = $portConnect.AsyncWaitHandle.WaitOne($timeOut, $false)
 
-			Return "ERROR"
-		} Else {
-			$ErrorActionPreference = "SilentlyContinue"
+					If (!$tcpPortWait) {
+						$tcpPortSocket.Close()
+					} Else {
+						$ErrorActionPreference = "SilentlyContinue"
 
-			$tcpPortSocket.EndConnect($portConnect) > $null
-			If (!$?) {
-				Return "ERROR"
-			} Else {
-				Return "SUCCESS"
+						$tcpPortSocket.EndConnect($portConnect) > $null
+						If ($?) {
+							# FOR TESTING ONLY
+							<#
+							Write-Host "Host IPv4 Address...: $serverIPv4 (OK!)"
+							#>
+							$result = "SUCCESS"
+						} Else {
+							# FOR TESTING ONLY
+							<#
+							Write-Host "Host IPv4 Address...: $serverIPv4 (NOK!)"
+							#>
+						}
+
+						$tcpPortSocket.Close()
+
+						$ErrorActionPreference = "Continue"
+					}
+				}
 			}
-
-			$tcpPortSocket.Close()
-
-			$ErrorActionPreference = "Continue"
 		}
+		# FOR TESTING ONLY
+		<#
+		If ($result -eq "SUCCESS") {
+			Write-Host "portConnectionCheck Success Result..." -ForegroundColor Green
+		} Else {
+			Write-Host "portConnectionCheck Failed Result..." -ForegroundColor Red
+		}
+		#>
+
+		Return $result
 	}
 }
 
@@ -6518,7 +6571,7 @@ If (Test-Path $($script:scriptXMLConfigFilePath)) {
 		$connectionParametersSource = "XML Config File '$($script:scriptXMLConfigFilePath)'"
 
 		$connectionTimeout = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.connectionTimeoutInMilliSeconds
-		If ($connectionTimeout -notmatch "^\d+$") {
+		If ([int]$connectionTimeout -notmatch "^\d+$") {
 			writeLog -dataToLog ""
 			writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "  > 'connectionTimeoutInMilliSeconds'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6530,7 +6583,7 @@ If (Test-Path $($script:scriptXMLConfigFilePath)) {
 		}
 
 		$goldenTicketMonitorWaitingIntervalBetweenRuns = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.goldenTicketMonitorWaitingIntervalBetweenRunsInSeconds
-		If ($goldenTicketMonitorWaitingIntervalBetweenRuns -notmatch "^\d+$") {
+		If ([int]$goldenTicketMonitorWaitingIntervalBetweenRuns -notmatch "^\d+$") {
 			writeLog -dataToLog ""
 			writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "  > 'goldenTicketMonitorWaitingIntervalBetweenRunsInSeconds'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6542,7 +6595,7 @@ If (Test-Path $($script:scriptXMLConfigFilePath)) {
 		}
 
 		$goldenTicketMonitoringPeriod = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.goldenTicketMonitoringPeriodInSeconds
-		If ($goldenTicketMonitoringPeriod -notmatch "^\d+$") {
+		If ([int]$goldenTicketMonitoringPeriod -notmatch "^\d+$") {
 			writeLog -dataToLog ""
 			writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "  > 'goldenTicketMonitoringPeriodInSeconds'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6566,7 +6619,7 @@ If (Test-Path $($script:scriptXMLConfigFilePath)) {
 
 		If ($($script:resetRoutineEnabled).ToUpper() -eq "TRUE") {
 			$resetRoutineFirstResetIntervalInDays = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.resetRoutineFirstResetIntervalInDays
-			If ($resetRoutineFirstResetIntervalInDays -notmatch "^\d+$" -Or $resetRoutineFirstResetIntervalInDays -lt 3) {
+			If ([int]$resetRoutineFirstResetIntervalInDays -notmatch "^\d+$" -Or [int]$resetRoutineFirstResetIntervalInDays -lt 3) {
 				writeLog -dataToLog ""
 				writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "  > 'resetRoutineFirstResetIntervalInDays'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6578,7 +6631,7 @@ If (Test-Path $($script:scriptXMLConfigFilePath)) {
 			}
 
 			$resetRoutineSecondResetIntervalInDays = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.resetRoutineSecondResetIntervalInDays
-			If ($resetRoutineSecondResetIntervalInDays -notmatch "^\d+$" -Or $resetRoutineSecondResetIntervalInDays -lt 1) {
+			If ([int]$resetRoutineSecondResetIntervalInDays -notmatch "^\d+$" -Or [int]$resetRoutineSecondResetIntervalInDays -lt 1) {
 				writeLog -dataToLog ""
 				writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "  > 'resetRoutineSecondResetIntervalInDays'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6589,7 +6642,7 @@ If (Test-Path $($script:scriptXMLConfigFilePath)) {
 				BREAK
 			}
 
-			If ($resetRoutineFirstResetIntervalInDays -le $resetRoutineSecondResetIntervalInDays) {
+			If ([int]$resetRoutineFirstResetIntervalInDays -le [int]$resetRoutineSecondResetIntervalInDays) {
 				writeLog -dataToLog ""
 				writeLog -dataToLog "The XML Config File '$scriptXMLConfigFilePath' Has A Wrong Value For The Connection Parameter:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "  > 'resetRoutineFirstResetIntervalInDays'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -7498,6 +7551,7 @@ If (($modeOfOperationNr -ne 1 -And $modeOfOperationNr -ne 2 -And $modeOfOperatio
 	writeLog -dataToLog "  --> Chosen mode: Mode 0 - Exit Script..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog ""
 
+	#BREAK
 	EXIT
 }
 
@@ -7640,6 +7694,7 @@ If ($adForestValidity -eq $true) {
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
 
+	#BREAK
 	EXIT
 }
 
@@ -7718,6 +7773,7 @@ If ($adForestAccessibility -eq $true) {
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
 
+			#BREAK
 			EXIT
 		}
 	} Else {
@@ -7738,6 +7794,7 @@ If ($adForestAccessibility -eq $true) {
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
+		#BREAK
 		EXIT
 	}
 }
@@ -7968,6 +8025,7 @@ If ($adDomainValidity -eq $true) {
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
 
+	#BREAK
 	EXIT
 }
 
@@ -8021,6 +8079,7 @@ If ($modeOfOperationNr -gt 1) {
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
 
+			#BREAK
 			EXIT
 		} Else {
 			If ($skipDAMembershipCheck -eq $false) {
@@ -8052,6 +8111,7 @@ If ($modeOfOperationNr -gt 1) {
 							sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 						}
 
+						#BREAK
 						EXIT
 					} Else {
 						# The User Account Running This Script Has Been Validated To Be A Member Of The Enterprise Admins Group Of The AD Forest
@@ -8121,6 +8181,7 @@ If ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds))) {
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
 
+			#BREAK
 			EXIT
 		}
 	}
@@ -8155,6 +8216,7 @@ If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds))
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
+		#BREAK
 		EXIT
 	}
 }
@@ -8543,6 +8605,7 @@ If ($($script:targetedADdomainDomainFunctionalModeLevel) -ne "Unavailable" -And 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
 
+	#BREAK
 	EXIT
 }
 
@@ -8644,7 +8707,7 @@ If ($rwdcKrbTgtObject) {
 	$rwdcKrbTgtObjectMetadataAttribPwdLastSetOrgTime = "No Such Object"
 	$rwdcKrbTgtObjectMetadataAttribPwdLastSetVersion = "No Such Object"
 }
-If ($listOfRWDCsInADDomain) {
+If ([int]$nrOfRWDCsToProcess -gt 0) {
 	$listOfRWDCsInADDomain | ForEach-Object {
 		$nrOfRWDCsProcessed += 1
 
@@ -8755,6 +8818,60 @@ If ($listOfRWDCsInADDomain) {
 		# Add The Row For The RWDC To The Table
 		$tableOfDCsInADDomain.Add($tableOfDCsInADDomainObj)
 	}
+} Else {
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "No RWDCs Were Discovered In The AD Domain..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "This Happens When Either Of The Following Applies:" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog " * RWDCs ARE NOT In The 'Domain Controllers' OU..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog " * RWDCs DO NOT Have Their Default Primary Group ID 516..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+
+	$listOfDiscoveredDCs = @()
+	$thisADDomain.DomainControllers.Name | ForEach-Object {
+		# Retrieve Information For The AD Domain That Was Chosen
+		$dcInADDomain = $null
+		Try {
+			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
+				$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
+				$targetSearchBase = "DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC=")
+				$dcInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(dNSHostName=$_))" -PropertiesToLoad @("distinguishedName","dNSHostName", "msDS-isRODC", "name", "primaryGroupID")
+				$ldapConnection.Dispose()
+			}
+			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+				$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
+				$targetSearchBase = "DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC=")
+				$dcInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(dNSHostName=$_))" -PropertiesToLoad @("distinguishedName","dNSHostName", "msDS-isRODC", "name", "primaryGroupID")
+				$ldapConnection.Dispose()
+			}
+		} Catch {
+			# PLACEHOLDER
+		}
+		$discoveredDC = New-Object -TypeName PSObject
+		$discoveredDC | Add-Member -MemberType NoteProperty -Name "Host Name" -Value $($_)
+		$discoveredDC | Add-Member -MemberType NoteProperty -Name "DS Type" -Value $(If ($dcInADDomain."msDS-isRODC" -eq $false) {"Read/Write"} ElseIf ($dcInADDomain."msDS-isRODC" -eq $true) {"Read-Only"} Else {"UNKNOWN"})
+		$discoveredDC | Add-Member -MemberType NoteProperty -Name "PGID" -Value $($dcInADDomain.primaryGroupID)
+		$discoveredDC | Add-Member -MemberType NoteProperty -Name "DN Parent Container/OU" -Value $($($dcInADDomain.distinguishedName).Replace("CN=$($dcInADDomain.name),",""))
+		$listOfDiscoveredDCs += $discoveredDC
+	}
+
+	writeLog -dataToLog "List Of Discovered Domain Controllers In AD Domain '$($script:targetedADdomainFQDN)'..."
+	writeLog -dataToLog "$($listOfDiscoveredDCs | Format-Table * -Autosize | Out-String -Width 1024)"
+	writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "REMARKS:" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog " - For each DC review the column 'DN Parent Container/OU'. The computer account of the DC should be in the 'Domain Controllers' OU" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog " - For each DC review the column 'PGID'. For RWDCs it should be '516', and for RODCs it should be '521'" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+
+	# Mail The Log File With The Results
+	If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
+		$context = "SCRIPT ABORT - ERROR: No RWDCs Were Discovered!!! (Script Version: $($script:version))"
+
+		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
+	}
+
+	#BREAK
+	EXIT
 }
 
 # Retrieve All The RODCs In The AD Domain
@@ -8772,7 +8889,7 @@ writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLi
 writeLog -dataToLog "Processing Data Of All The Discovered Read-Only DCs (RODCs) - NO CHANGES MADE!!!..." -logFileOnly $false -noDateTimeInLogLine $false
 $nrOfRODCsToProcess = ($listOfRODCsInADDomain | Measure-Object).Count
 $nrOfRODCsProcessed = 0
-If ($listOfRODCsInADDomain) {
+If ([int]$nrOfRODCsToProcess -gt 0) {
 	$listOfRODCsInADDomain | ForEach-Object {
 		$nrOfRODCsProcessed += 1
 
@@ -9219,6 +9336,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
+		#BREAK
 		EXIT
 	}
 }
@@ -9271,6 +9389,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
+		#BREAK
 		EXIT
 	}
 
@@ -9401,6 +9520,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
+		#BREAK
 		EXIT
 	}
 
@@ -9722,6 +9842,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 					writeLog -dataToLog "Aborting Script..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 
+					#BREAK
 					EXIT
 				}
 			} Catch {
@@ -9735,6 +9856,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 
+				#BREAK
 				EXIT
 			}
 		}
@@ -9760,7 +9882,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 				$filteredSecurityEventsKerbSvcTicketOps = [System.Collections.Generic.List[Object]]::New()
 
 				writeLog -dataToLog ""
-				writeLog -dataToLog "  ============= CURRENT Date/Time: ($(Get-Date -format 'yyyy-MM-dd HH:mm:ss')) ============= Run: '$runNr' ============= STOPS After: $(Get-Date $($execDateTime.AddSeconds($goldenTicketMonitoringPeriod)) -format 'yyyy-MM-dd HH:mm:ss') ============="
+				writeLog -dataToLog "  ============= CURRENT Date/Time: ($(Get-Date -format 'yyyy-MM-dd HH:mm:ss')) ============= Run: '$runNr' ============= STOPS After: $(Get-Date $($execDateTime.AddSeconds([int]$goldenTicketMonitoringPeriod)) -format 'yyyy-MM-dd HH:mm:ss') ============="
 				writeLog -dataToLog ""
 			}
 
@@ -9920,6 +10042,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 									sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 								}
 
+								#BREAK
 								EXIT
 							}
 						}
@@ -10578,7 +10701,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 				writeLog -dataToLog ""
 				startCountdown $goldenTicketMonitorWaitingIntervalBetweenRuns
 			}
-		} Until ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6 -Or ($modeOfOperationNr -eq 7 -And $(Get-Date) -gt $($execDateTime.AddSeconds($goldenTicketMonitoringPeriod))))
+		} Until ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6 -Or ($modeOfOperationNr -eq 7 -And $(Get-Date) -gt $($execDateTime.AddSeconds([int]$goldenTicketMonitoringPeriod))))
 	}
 }
 
@@ -10611,6 +10734,7 @@ If ($modeOfOperationNr -eq 8) {
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
+		#BREAK
 		EXIT
 	}
 
@@ -10687,6 +10811,7 @@ If ($modeOfOperationNr -eq 9) {
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
+		#BREAK
 		EXIT
 	}
 
