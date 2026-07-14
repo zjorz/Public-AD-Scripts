@@ -1,6 +1,7 @@
 ###
 # Parameters Used By Script
 ###
+[CmdletBinding()]
 Param (
 	[switch]$noInfo,
 	[ValidateSet("infoMode", "simulModeCanaryObject", "simulModeKrbTgtTestAccountsWhatIf", "resetModeKrbTgtTestAccountsResetOnce", "simulModeKrbTgtProdAccountsWhatIf", "resetModeKrbTgtProdAccountsResetOnce", "monitorForGoldenTicket")]
@@ -21,7 +22,7 @@ Param (
 ###
 # Version Of Script
 ###
-$script:version = "v4.0, 2026-04-06"
+$script:version = "v4.1, 2026-07-14"
 
 <#
 	AUTHOR
@@ -58,6 +59,7 @@ $script:version = "v4.0, 2026-04-06"
 	KNOWN ISSUES/BUGS
 		- The script is NOT digitally signed
 		- The script DOES NOT work with PowerShell ISE!
+		- Any credentials stored in the configuration XML file are stored in CLEAR TEXT!!!
 		- Make sure to unblock the script using the 'Unblock-File' CMDLet after downloading from the internet
 		- When targeting a remote AD forest for which no trust exist with the AD forest the running account belongs to, the public profile of WinRM may be
 			used. In that case the PSSession for 'Get-GPOReport' may fail due to the default firewall exception only allowing access from remote computers
@@ -114,6 +116,32 @@ $script:version = "v4.0, 2026-04-06"
 			Possible workaround is to use automation and use a scheduled task on an RWDC for each AD domain and run the scheduled task as NT AUTHORITY\SYSTEM
 
 	RELEASE NOTES
+		v4.1, 2026-07-14, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+			- Code Improvement: Code reviewed by Claude AI --> Added comment "# The 'DirectoryContext' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API"
+			- Code Improvement: Code reviewed by Claude AI --> Added warning in XML configuration file about the potential storage of credentials
+			- Code Improvement: Code reviewed by Claude AI --> Consolidated "Write Exception Log" into a new function "writeExceptionLogError" and "writeExceptionLogWarning"
+			- Code Improvement: Code reviewed by Claude AI --> Specified [CmdletBinding()] for all functions with parameters
+			- Code Improvement: Code reviewed by Claude AI --> Move the disposal of the LDAP connections ($ldapConnection.Dispose()) to the Finally block
+			- Code Improvement: Code reviewed by Claude AI --> Removed the unnecessary conversion from SecureString to PlainText to SecureString again
+			- Code Improvement: Code reviewed by Claude AI --> Consolidated the logic for $localADForest with ($false) or without ($true) $admCrds into the function "setupLdapConnection"
+			- Code Improvement: Updated function "createTestKrbTgtADAccount"
+			- Code Improvement: Removing code duplications and code optimizations
+			- Code Improvement: Updated the function "determineUserAccountForRSoP" to support custom credentials to be able to target remote domains/forests
+			- Code Improvement: Updated the function "determineUserAccountForRSoP" to use Get-CimInstance without specifying a remote server FQDN if that FQDN matched the FQDN of the local DC
+			- Code Improvement: Updated the function "determineKerberosPolicySettings" to deal with the scenario where errors in RSoP processing may occur that influence the XML structure. An example of a possible error is a missing ADMX file
+			- Code Improvement: Redefining arrays/list correctly from @() to [System.Collections.Generic.List[string]]::new() or [System.Collections.Generic.List[object]]::new()
+			- Code Improvement: Redefining objects correctly from whatever was used to PSCustomObject and also stop using Add-Member
+			- Code Improvement: Updated the logic around using the function "determineUserAccountForRSoP"
+			- Code Improvement: Created an additional function "determineAdvancedAuditingSecuritySettings" and made sure it can deal with the scenario where errors in RSoP processing may occur that influence the XML structure. An example of a possible error is a missing ADMX file
+			- Code Improvement: Made some updates to the mode "Golden Ticket Monitor Mode" (Mode 7) (=EXPERIMENTAL!)
+			- Improved User Experience: Previously automation of the script was determine when all the parameters "modeOfOperation", "targetedADforestFQDN", "targetedADdomainFQDN" and "targetKrbTgtAccountScope" were specified through the command line. Automation of the script is now determine when only the parameter "targetKrbTgtAccountScope" is specified through the command line. This allows to run the script on-demand with almost all parameters preventing specification of details as much as possible
+			- Improved User Experience: When the account "krbtgt_AzureAD" is found it now also reports on the date/time its password was last set
+			- Improved User Experience: Updated the function "sendMailMessage" to add support to fully customize the mail SUBJECT and mail BODY as desired
+			- Improved User Experience: Updated the Configuration XML file "Reset-KrbTgt-Password-For-RWDCs-And-RODCs.xml" to add support to fully customize the mail SUBJECT and mail BODY as desired. With that the function "validateXMLConfigFileForNodes" was also updated
+			- Bug Fix: Fixed the definition of the function "writeLog" by renaming old references of "loggingDef" to "writeLogDef"
+			- Bug Fix: Fixed the definition of the variables "$maxTgtLifetimeHrs" and "$maxClockSkewMins" from "$script:maxTgtLifetimeHrs" to "$maxTgtLifetimeHrs", and "$script:maxClockSkewMins" to "$maxClockSkewMins" in calls to remote domains/forests
+			- Bug Fix: Updated the Required Security Option state with an expected value
+
 		v4.0, 2026-04-06, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
 			- Code Improvement: Updated the function "portConnectionCheck" to better deal with multiple IPV4 addresses on either a single NIC, or multiple NICs (i.e. multi-homed) where all IPv4 have the same A record in DNS
 			- Code Improvement: Added a check when no RWDCs are discovered in the AD domain within the OU 'Domain Controllers' and primaryGroupID 516 (RWDC) or 521 (RODC). It will then try to rediscover the DCs within the AD domain, report on those and finally abort the script.
@@ -588,6 +616,7 @@ $script:version = "v4.0, 2026-04-06"
 	.\Reset-KrbTgt-Password-For-RWDCs-And-RODCs.ps1 -noInfo -sendMailWithLogFile -execResetRoutine -modeOfOperation resetModeKrbTgtProdAccountsResetOnce -targetKrbTgtAccountScope allRWDCsAndRODCs -targetedADforestFQDN DOMAIN.COM -targetedADdomainFQDN CHILD.DOMAIN.COM -continueOps
 
 .NOTES
+	- "Write-Host", instead of "Write-Output/Write-Information", is used to allow to have/use colored output on screen
 	- Minimum required PowerShell version: 5.1 (it is being checked and enforced!)
 	- Required PoSH CMDlets: GPMC PoSH CMDlets on all targeted RWDCs!!! (and the S.DS.P Posh CMDlets are INCLUDED in this script!)
 	- The script must either be executed from PowerShell or Windows Terminal. PowerShell ISE IS NOT supported!
@@ -641,7 +670,26 @@ $script:version = "v4.0, 2026-04-06"
 	- When using application client id with a client certificate, the credential running the script must have READ access to the private key of the
 		certificate being used. The certificate should be located in the (Personal) Local Computer Store
 	- Configuration XML file > Use sample in: https://github.com/zjorz/Public-AD-Scripts/blob/master/Reset-KrbTgt-Password-For-RWDCs-And-RODCs.xml
-	- SCENARIO (1stInterval = 3, 2ndInterval = 1, the MINIMUM values)
+	- Customizing the mail subject
+		This is done in the Configuration XML File!
+		In the XML element "<mailSubject>" define the textual subject and use the desired placeholders. A placeholder can be anything, just make sure it is recognizable as such.
+		For example, use "REPLACE_ACCOUNT_SCOPE" to be the placeholder for the KrbTGT Account Scop chosen. In the PowerShell script look up the variable that provides that value.
+		In that case it will be the variable "$targetKrbTgtAccountScope".
+		Now in the Configuration XML File create a sub XML element called "mailReplacementOption" under the XML element "mailReplacementOptionsSUBJECT". For the sub xml element
+		define the attribute (without the single quotes) 'placeholder = "REPLACE_ACCOUNT_SCOPE"' and the attribute (without the single quotes) 'replaceWith = "$targetKrbTgtAccountScope"'.
+		Repeat this for every placeholder needed!
+		See the Configuration XML File for an example!
+	- Customizing the mail body
+		This is done in the Configuration XML File!
+		In the XML element "<mailBody>" define the HTML body taking into account the replacement of < and > with their ASCII counterpart and use the desired placeholders. A
+		placeholder can be anything, just make sure it is recognizable as such.
+		For example, use "REPLACE_AD_DOMAIN_FQDN" to be the placeholder for the AD Domain FQDN. In the PowerShell script look up the variable that provides that value. In that case
+		it will be the variable "$($script:targetedADdomainFQDN)".
+		Now in the Configuration XML File create a sub XML element called "mailReplacementOption" under the XML element "mailReplacementOptionsBODY". For the sub xml element define
+		the attribute (without the single quotes) 'placeholder = "REPLACE_AD_DOMAIN_FQDN"' and the attribute (without the single quotes) 'replaceWith = "$($script:targetedADdomainFQDN)"'.
+		Repeat this for every placeholder needed!
+		See the Configuration XML File for an example!
+	- PASSWORD RESET ROUTINE SCENARIO (1stInterval = 3, 2ndInterval = 1, the MINIMUM values)
 		DAY0:
 		* read lastResetDate =  pwdLastSet = DAY0 - 100 (ie 100 days ago)
 		* read state = EMPTY
@@ -756,7 +804,7 @@ $script:version = "v4.0, 2026-04-06"
 		* set 2ndResetDate = attribute_for_2ndResetDate = EMPTY
 		* PWD Reset = FALSE
 
-	- Example Scheduled Task Configuration For The Password Reset Routine Targeting The Test/Bogus KrbTgt Accounts Of Both RWDCs And RODCs In The Specified AD Forest/Domain
+	- Example Scheduled Task Configuration For The Password Reset Routine Targeting The TEST/BOGUS KrbTgt Accounts Of Both RWDCs And RODCs In The Specified AD Forest/Domain
 		ACTION - Program/Script (PoSH v5.1) = C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
 		ACTION - Program/Script (PoSH v7.x) = "C:\Program Files\PowerShell\7\pwsh.exe"
 		ACTION - Arguments = -NoProfile -NonInterActive -Command "D:\TEMP\Reset-KrbTgt-Password-For-RWDCs-And-RODCs.ps1 -noInfo -sendMailWithLogFile -execResetRoutine -modeOfOperation resetModeKrbTgtTestAccountsResetOnce -targetKrbTgtAccountScope allRWDCsAndRODCs -targetedADforestFQDN DOMAIN.COM -targetedADdomainFQDN CHLD.DOMAIN.COM -continueOps"
@@ -842,8 +890,7 @@ public class NamingContext
 "@
 
 # --------------------------------------------------------------------------------------------------------------------------------
-
-$sdspModuleHelpers = New-Object -TypeName PSObject -Property @{
+$sdspModuleHelpers = [PSCustomObject]@{
 	flattener     = $flattener
 	namingContext = $namingContext
 }
@@ -983,11 +1030,11 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 				$response = $LdapConnection.SendRequest($rqAdd, $Timeout) -as [System.DirectoryServices.Protocols.AddResponse]
 			} else {
 				$response = $LdapConnection.SendRequest($rqAdd) -as [System.DirectoryServices.Protocols.AddResponse]
-            }
-            #handle failed operation that does not throw itself
-            if($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
-                throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqAdd.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
-            }
+			}
+			#handle failed operation that does not throw itself
+			if ($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
+				throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqAdd.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
+			}
 		}
 		if ($Passthrough) {
 			$Object
@@ -1173,12 +1220,12 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 			if ($Timeout -ne [TimeSpan]::Zero) {
 				$response = $LdapConnection.SendRequest($rqMod, $Timeout) -as [System.DirectoryServices.Protocols.ModifyResponse]
 			} else {
-                $response = $LdapConnection.SendRequest($rqMod) -as [System.DirectoryServices.Protocols.ModifyResponse]
-            }
-            #handle failed operation that does not throw itself
-            if($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
-                throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqMod.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
-            }
+				$response = $LdapConnection.SendRequest($rqMod) -as [System.DirectoryServices.Protocols.ModifyResponse]
+			}
+			#handle failed operation that does not throw itself
+			if ($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
+				throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqMod.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
+			}
 		}
 		#if requested, pass the object to pipeline for further processing
 		if ($Passthrough) { $Object }
@@ -1422,11 +1469,11 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 			#>
 		$AdditionalProperties = @(),
 
-        [parameter()]
-        [String[]]
-        #Properties to ignore when loading objects from LDAP
-        #Default: empty list, which means that no properties are ignored
-        $IgnoredProperties=@(),
+		[parameter()]
+		[String[]]
+		#Properties to ignore when loading objects from LDAP
+		#Default: empty list, which means that no properties are ignored
+		$IgnoredProperties = @(),
 
 		[parameter(Mandatory = $false)]
 		[System.DirectoryServices.Protocols.DirectoryControl[]]
@@ -1493,8 +1540,8 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 		}
 
 		#remove unwanted props
-        $PropertiesToLoad=$propertiesToLoad.Where{$_ -notin @('distinguishedName','1.1')}
-        #if asterisk in list of props to load, load all props available on object despite of  required list
+		$PropertiesToLoad = $propertiesToLoad.Where{ $_ -notin @('distinguishedName', '1.1') }
+		#if asterisk in list of props to load, load all props available on object despite of  required list
 		# SDSP_INDIVIDUAL_UPDATES Updated: $xxx.Count to $($xxx | Measure-Object).Count
 		if ($($propertiesToLoad | Measure-Object).Count -eq 0) { $NoAttributes = $true } else { $NoAttributes = $false }
 		if ('*' -in $PropertiesToLoad) { $PropertiesToLoad = @() }
@@ -1517,18 +1564,18 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 		if ($null -ne $searchBase) {
 			#we support pipelining of strings, or objects containing distinguishedName property
 			switch ($searchBase.GetType().Name) {
-                "String" {
-                    $rq.DistinguishedName = $searchBase
-                    break;
-                }
-                'DistinguishedName' {
-                    $rq.DistinguishedName=$searchBase.ToString()
-                    break;
-                }
-                default {
+				"String" {
+					$rq.DistinguishedName = $searchBase
+					break;
+				}
+				'DistinguishedName' {
+					$rq.DistinguishedName = $searchBase.ToString()
+					break;
+				}
+				default {
 					if ($null -ne $searchBase.distinguishedName) {
-                        #covers both string and DistinguishedName types
-                        $rq.DistinguishedName=$searchBase.distinguishedName.ToString()
+						#covers both string and DistinguishedName types
+						$rq.DistinguishedName = $searchBase.distinguishedName.ToString()
 					}
 				}
 			}
@@ -2392,16 +2439,16 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 		#add additional controls that caller may have passed
 		foreach ($ctrl in $AdditionalControls) { $rqDel.Controls.Add($ctrl) > $null }
 
-        $rqDel.DistinguishedName = $Object | GetDnFromInput
+		$rqDel.DistinguishedName = $Object | GetDnFromInput
 
-        if($UseTreeDelete) {
-            $rqDel.Controls.Add((new-object System.DirectoryServices.Protocols.TreeDeleteControl)) > $null
-        }
-        $response = $LdapConnection.SendRequest($rqDel) -as [System.DirectoryServices.Protocols.DeleteResponse]
-        #handle failed operation that does not throw itself
-        if($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
-            throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqDel.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
-        }
+		if ($UseTreeDelete) {
+			$rqDel.Controls.Add((new-object System.DirectoryServices.Protocols.TreeDeleteControl)) > $null
+		}
+		$response = $LdapConnection.SendRequest($rqDel) -as [System.DirectoryServices.Protocols.DeleteResponse]
+		#handle failed operation that does not throw itself
+		if ($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
+			throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqDel.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
+		}
 	}
 }
 Function Rename-LdapObject {
@@ -2476,18 +2523,18 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 	Process {
 		[System.DirectoryServices.Protocols.ModifyDNRequest]$rqModDN = new-object System.DirectoryServices.Protocols.ModifyDNRequest
 
-        $rqModDn.DistinguishedName = $Object | GetDnFromInput
+		$rqModDn.DistinguishedName = $Object | GetDnFromInput
 
-        foreach($ctrl in $AdditionalControls) { $rqModDN.Controls.Add($ctrl) > $null }
+		foreach ($ctrl in $AdditionalControls) { $rqModDN.Controls.Add($ctrl) > $null }
 
 		$rqModDn.NewName = $NewName
 		if (-not [string]::IsNullOrEmpty($NewParent)) { $rqModDN.NewParentDistinguishedName = $NewParent }
 		$rqModDN.DeleteOldRdn = (-not $KeepOldRdn)
-        $response = $LdapConnection.SendRequest($rqModDN) -as [System.DirectoryServices.Protocols.ModifyDNResponse]
-        #handle failed operation that does not throw itself
-        if($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
-            throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqModDN.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
-        }
+		$response = $LdapConnection.SendRequest($rqModDN) -as [System.DirectoryServices.Protocols.ModifyDNResponse]
+		#handle failed operation that does not throw itself
+		if ($null -ne $response -and $response.ResultCode -ne [System.DirectoryServices.Protocols.ResultCode]::Success) {
+			throw (new-object System.DirectoryServices.Protocols.LdapException(([int]$response.ResultCode), "$($rqModDN.DistinguishedName)`: $($response.ResultCode)`: $($response.ErrorMessage)", $response.ErrorMessage))
+		}
 	}
 }
 Function Set-LdapDirSyncCookie {
@@ -2537,7 +2584,7 @@ More about DirSync: https://docs.microsoft.com/en-us/openspecs/windows_protocols
 }
 
 Function Test-LdapObject {
-<#
+	<#
 .SYNOPSIS
     Checks existence of LDAP object by distinguished name.
 
@@ -2555,45 +2602,44 @@ Function Test-LdapObject {
 More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/library/bb332056.aspx
 
 #>
-    Param (
-        [parameter(Mandatory = $true, ValueFromPipeline=$true)]
-        [Object]
-        #Object to test existence of
-        $Object,
+	Param (
+		[parameter(Mandatory = $true, ValueFromPipeline = $true)]
+		[Object]
+		#Object to test existence of
+		$Object,
 
-        [parameter()]
-        [System.DirectoryServices.Protocols.LdapConnection]
-        #Existing LDAPConnection object.
-        $LdapConnection = $script:LdapConnection
-    )
+		[parameter()]
+		[System.DirectoryServices.Protocols.LdapConnection]
+		#Existing LDAPConnection object.
+		$LdapConnection = $script:LdapConnection
+	)
 
-    begin {
-        EnsureLdapConnection -LdapConnection $LdapConnection
-    }
+	begin {
+		EnsureLdapConnection -LdapConnection $LdapConnection
+	}
 
-    Process {
-        $dn = $object | GetDnFromInput
+	Process {
+		$dn = $object | GetDnFromInput
 
-        try {
-            $result = Find-LdapObject `
-                -LdapConnection $LdapConnection `
-                -SearchBase $dn `
-                -searchFilter '(objectClass=*)' `
-                -searchScope Base `
-                -PropertiesToLoad '1.1' `
-                -ErrorAction Stop
+		try {
+			$result = Find-LdapObject `
+				-LdapConnection $LdapConnection `
+				-SearchBase $dn `
+				-searchFilter '(objectClass=*)' `
+				-searchScope Base `
+				-PropertiesToLoad '1.1' `
+				-ErrorAction Stop
 
-            #some LDAP servers return null if object is not found, others throw an exception
-            return ($null -ne $result)
-        }
-        catch [System.DirectoryServices.Protocols.DirectoryOperationException] {
-            if($_.Exception.Response.ResultCode -eq  [System.DirectoryServices.Protocols.ResultCode]::NoSuchObject) {
-                return $false
-            } else {
-                throw
-            }
-        }
-    }
+			#some LDAP servers return null if object is not found, others throw an exception
+			return ($null -ne $result)
+		} catch [System.DirectoryServices.Protocols.DirectoryOperationException] {
+			if ($_.Exception.Response.ResultCode -eq [System.DirectoryServices.Protocols.ResultCode]::NoSuchObject) {
+				return $false
+			} else {
+				throw
+			}
+		}
+	}
 }
 
 Function Unregister-LdapAttributeTransform {
@@ -2671,69 +2717,69 @@ Function EnsureLdapConnection {
 }
 
 function GetDnFromInput {
-    Param (
-        [parameter(Mandatory = $true, ValueFromPipeline=$true)]
-        [Object]
-        #DN string or object with distinguishedName property
-        $Object
-    )
+	Param (
+		[parameter(Mandatory = $true, ValueFromPipeline = $true)]
+		[Object]
+		#DN string or object with distinguishedName property
+		$Object
+	)
 
-    process {
-        if($null -ne $Object) {
-            #we support pipelining of strings or DistinguishedName types, or objects containing distinguishedName property - string or DistinguishedName
-            switch($Object.GetType().Name) {
-                "String" {
-                    $dn = $Object
-                    break;
-                }
-                'DistinguishedName' {
-                    $dn=$Object.ToString()
-                    break;
-                }
-                default {
-                    if($null -ne $Object.distinguishedName) {
-                        #covers both string and DistinguishedName types
-                        $dn = $Object.distinguishedName.ToString()
-                    }
-                }
-            }
-        }
-        if([string]::IsNullOrEmpty($dn)) {
-            throw (new-object System.ArgumentException("Distinguished name not present on input object"))
-        }
-        #we return the DN as a string
-        return $dn
-    }
+	process {
+		if ($null -ne $Object) {
+			#we support pipelining of strings or DistinguishedName types, or objects containing distinguishedName property - string or DistinguishedName
+			switch ($Object.GetType().Name) {
+				"String" {
+					$dn = $Object
+					break;
+				}
+				'DistinguishedName' {
+					$dn = $Object.ToString()
+					break;
+				}
+				default {
+					if ($null -ne $Object.distinguishedName) {
+						#covers both string and DistinguishedName types
+						$dn = $Object.distinguishedName.ToString()
+					}
+				}
+			}
+		}
+		if ([string]::IsNullOrEmpty($dn)) {
+			throw (new-object System.ArgumentException("Distinguished name not present on input object"))
+		}
+		#we return the DN as a string
+		return $dn
+	}
 }
 <#
 	Retrieves search results as single search request
 	Total # of search requests produced is 1
 #>
 function GetResultsDirectlyInternal {
-    param (
-        [Parameter(Mandatory)]
-        [System.DirectoryServices.Protocols.SearchRequest]
-        $rq,
-        [parameter(Mandatory)]
-        [System.DirectoryServices.Protocols.LdapConnection]
-        $conn,
-        [parameter()]
-        [String[]]
-        $PropertiesToLoad=@(),
-        [parameter()]
-        [String[]]
-        $AdditionalProperties=@(),
-        [parameter()]
-        [String[]]
-        $IgnoredProperties=@(),
-        [parameter()]
-        [String[]]
-        $BinaryProperties=@(),
-        [parameter()]
-        [Timespan]
-        $Timeout,
-        [switch]$NoAttributes
-    )
+	param (
+		[Parameter(Mandatory)]
+		[System.DirectoryServices.Protocols.SearchRequest]
+		$rq,
+		[parameter(Mandatory)]
+		[System.DirectoryServices.Protocols.LdapConnection]
+		$conn,
+		[parameter()]
+		[String[]]
+		$PropertiesToLoad = @(),
+		[parameter()]
+		[String[]]
+		$AdditionalProperties = @(),
+		[parameter()]
+		[String[]]
+		$IgnoredProperties = @(),
+		[parameter()]
+		[String[]]
+		$BinaryProperties = @(),
+		[parameter()]
+		[Timespan]
+		$Timeout,
+		[switch]$NoAttributes
+	)
 
 	begin {
 		$template = InitializeItemTemplateInternal -props $PropertiesToLoad -additionalProps $AdditionalProperties
@@ -2764,9 +2810,9 @@ function GetResultsDirectlyInternal {
 			foreach ($sr in $rsp.Entries) {
 				$data = $template.Clone()
 
-                foreach($attrName in $sr.Attributes.AttributeNames) {
-                    $targetAttrName = GetTargetAttr -attr $attrName
-                    if($targetAttrName -in $IgnoredProperties) {continue}
+				foreach ($attrName in $sr.Attributes.AttributeNames) {
+					$targetAttrName = GetTargetAttr -attr $attrName
+					if ($targetAttrName -in $IgnoredProperties) { continue }
 					if ($targetAttrName -ne $attrName) {
 						Write-Warning "Value of attribute $targetAttrName not completely retrieved as it exceeds query policy. Use ranged retrieval. Range hint: $attrName"
 					} else {
@@ -2776,46 +2822,46 @@ function GetResultsDirectlyInternal {
 						}
 					}
 
-                    $transform = $script:RegisteredTransforms[$targetAttrName]
-                    $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($targetAttrName -in $BinaryProperties)
-                    try {
-                        if($null -ne $transform -and $null -ne $transform.OnLoad) {
+					$transform = $script:RegisteredTransforms[$targetAttrName]
+					$BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($targetAttrName -in $BinaryProperties)
+					try {
+						if ($null -ne $transform -and $null -ne $transform.OnLoad) {
 							try {
-								if($BinaryInput -eq $true) {
+								if ($BinaryInput -eq $true) {
 									$data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([byte[]])))
 								} else {
 									$data[$targetAttrName] = (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([string])))
 								}
 							} catch {
 								Write-Warning "Transform failed. Object: $($sr.DistinguishedName) `tAttribute: $targetAttrName`: $_"
-                            }
-                        } else {
-                            if($BinaryInput -eq $true) {
-                                $data[$targetAttrName] = $sr.Attributes[$attrName].GetValues([byte[]])
-                            } else {
-                                $data[$targetAttrName] = $sr.Attributes[$attrName].GetValues([string])
-                            }
-                        }
-                    } catch {
-                        Write-Error -ErrorRecord $_
-                    }
-                }
+							}
+						} else {
+							if ($BinaryInput -eq $true) {
+								$data[$targetAttrName] = $sr.Attributes[$attrName].GetValues([byte[]])
+							} else {
+								$data[$targetAttrName] = $sr.Attributes[$attrName].GetValues([string])
+							}
+						}
+					} catch {
+						Write-Error -ErrorRecord $_
+					}
+				}
 
-                if([string]::IsNullOrEmpty($data['distinguishedName'])) {
-                    #dn has to be present on all objects
-                    #having DN processed at the end gives chance to possible transforms on this attribute
-                    $transform = $script:RegisteredTransforms['distinguishedName']
-                    try {
-                        if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                            $data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
-                        } else {
-                            $data['distinguishedName']=$sr.DistinguishedName
-                        }
-                    } catch {
-                        Write-Error -ErrorRecord $_
-                    }
-                }
-                $data
+				if ([string]::IsNullOrEmpty($data['distinguishedName'])) {
+					#dn has to be present on all objects
+					#having DN processed at the end gives chance to possible transforms on this attribute
+					$transform = $script:RegisteredTransforms['distinguishedName']
+					try {
+						if ($null -ne $transform -and $null -ne $transform.OnLoad) {
+							$data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
+						} else {
+							$data['distinguishedName'] = $sr.DistinguishedName
+						}
+					} catch {
+						Write-Error -ErrorRecord $_
+					}
+				}
+				$data
 			}
 			#the response may contain paged search response. If so, we will need a cookie from it
 			[System.DirectoryServices.Protocols.PageResultResponseControl] $prrc = $rsp.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultResponseControl] }
@@ -2883,66 +2929,66 @@ function GetResultsDirSyncInternal {
 				throw $_.Exception
 			}
 
-            foreach ($sr in $rsp.Entries) {
-                $data=$template.Clone()
+			foreach ($sr in $rsp.Entries) {
+				$data = $template.Clone()
 
-                foreach($attrName in $sr.Attributes.AttributeNames) {
-                    $targetAttrName = GetTargetAttr -attr $attrName
-                    if($IgnoredProperties -contains $targetAttrName) {continue}
-                    if($attrName -ne $targetAttrName) {
-                        if($null -eq $data[$targetAttrName]) {
-                            $data[$targetAttrName] = [PSCustomObject]@{
-                                Add=@()
-                                Remove=@()
-                            }
-                        }
-                        #we have multi-value prop change --> need special handling
-                        #Windows AD/LDS server returns attribute name as '<attr>;range=1-1' for added values and '<attr>;range=0-0' for removed values on forward-linked attributes
-                        if($attrName -like '*;range=1-1') {
-                            $attributeContainer = {param($val) $data[$targetAttrName].Add=$val}
-                        } else {
-                            $attributeContainer = {param($val) $data[$targetAttrName].Remove=$val}
-                        }
-                    } else {
-                        $attributeContainer = {param($val) $data[$targetAttrName]=$val}
-                    }
+				foreach ($attrName in $sr.Attributes.AttributeNames) {
+					$targetAttrName = GetTargetAttr -attr $attrName
+					if ($IgnoredProperties -contains $targetAttrName) { continue }
+					if ($attrName -ne $targetAttrName) {
+						if ($null -eq $data[$targetAttrName]) {
+							$data[$targetAttrName] = [PSCustomObject]@{
+								Add    = @()
+								Remove = @()
+							}
+						}
+						#we have multi-value prop change --> need special handling
+						#Windows AD/LDS server returns attribute name as '<attr>;range=1-1' for added values and '<attr>;range=0-0' for removed values on forward-linked attributes
+						if ($attrName -like '*;range=1-1') {
+							$attributeContainer = { param($val) $data[$targetAttrName].Add = $val }
+						} else {
+							$attributeContainer = { param($val) $data[$targetAttrName].Remove = $val }
+						}
+					} else {
+						$attributeContainer = { param($val) $data[$targetAttrName] = $val }
+					}
 
-                    $transform = $script:RegisteredTransforms[$targetAttrName]
-                    $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($targetAttrName -in $BinaryProperties)
-                    try {
-                        if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                            if($BinaryInput -eq $true) {
-                                &$attributeContainer (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([byte[]])))
-                            } else {
-                                &$attributeContainer (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([string])))
-                            }
-                        } else {
-                            if($BinaryInput -eq $true) {
-                                &$attributeContainer $sr.Attributes[$attrName].GetValues([byte[]])
-                            } else {
-                                &$attributeContainer $sr.Attributes[$attrName].GetValues([string])
-                            }
-                        }
-                    } catch {
-                        Write-Error -ErrorRecord $_
-                    }
-                }
+					$transform = $script:RegisteredTransforms[$targetAttrName]
+					$BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($targetAttrName -in $BinaryProperties)
+					try {
+						if ($null -ne $transform -and $null -ne $transform.OnLoad) {
+							if ($BinaryInput -eq $true) {
+								&$attributeContainer (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([byte[]])))
+							} else {
+								&$attributeContainer (& $transform.OnLoad -Values ($sr.Attributes[$attrName].GetValues([string])))
+							}
+						} else {
+							if ($BinaryInput -eq $true) {
+								&$attributeContainer $sr.Attributes[$attrName].GetValues([byte[]])
+							} else {
+								&$attributeContainer $sr.Attributes[$attrName].GetValues([string])
+							}
+						}
+					} catch {
+						Write-Error -ErrorRecord $_
+					}
+				}
 
-                if([string]::IsNullOrEmpty($data['distinguishedName'])) {
-                    #dn has to be present on all objects
-                    #having DN processed at the end gives chance to possible transforms on this attribute
-                    $transform = $script:RegisteredTransforms['distinguishedName']
-                    try {
-                        if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                            $data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
-                        } else {
-                            $data['distinguishedName']=$sr.DistinguishedName
-                        }
-                    } catch {
-                        Write-Error -ErrorRecord $_
-                    }
-                }
-                $data
+				if ([string]::IsNullOrEmpty($data['distinguishedName'])) {
+					#dn has to be present on all objects
+					#having DN processed at the end gives chance to possible transforms on this attribute
+					$transform = $script:RegisteredTransforms['distinguishedName']
+					try {
+						if ($null -ne $transform -and $null -ne $transform.OnLoad) {
+							$data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
+						} else {
+							$data['distinguishedName'] = $sr.DistinguishedName
+						}
+					} catch {
+						Write-Error -ErrorRecord $_
+					}
+				}
+				$data
 			}
 			#the response may contain dirsync response. If so, we will need a cookie from it
 			[System.DirectoryServices.Protocols.DirSyncResponseControl] $dsrc = $rsp.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.DirSyncResponseControl] }
@@ -2976,27 +3022,27 @@ function GetResultsIndirectlyInternal {
 		[System.DirectoryServices.Protocols.LdapConnection]
 		$conn,
 
-        [parameter()]
-        [String[]]
-        $PropertiesToLoad=@(),
+		[parameter()]
+		[String[]]
+		$PropertiesToLoad = @(),
 
-        [parameter()]
-        [String[]]
-        $AdditionalProperties=@(),
+		[parameter()]
+		[String[]]
+		$AdditionalProperties = @(),
 
-        [parameter()]
-        [String[]]
-        $IgnoredProperties=@(),
+		[parameter()]
+		[String[]]
+		$IgnoredProperties = @(),
 
 
-        [parameter(Mandatory = $false)]
-        [System.DirectoryServices.Protocols.DirectoryControl[]]
-        #additional controls that caller may need to add to request
-        $AdditionalControls=@(),
+		[parameter(Mandatory = $false)]
+		[System.DirectoryServices.Protocols.DirectoryControl[]]
+		#additional controls that caller may need to add to request
+		$AdditionalControls = @(),
 
-        [parameter()]
-        [String[]]
-        $BinaryProperties=@(),
+		[parameter()]
+		[String[]]
+		$BinaryProperties = @(),
 		[parameter()]
 		[Timespan]
 		$Timeout
@@ -3017,92 +3063,92 @@ function GetResultsIndirectlyInternal {
 					$rsp = $conn.SendRequest($rq) -as [System.DirectoryServices.Protocols.SearchResponse]
 				}
 			} catch [System.DirectoryServices.Protocols.DirectoryOperationException] {
-                if($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded') {
-                    #size limit exceeded
-                    $rsp = $_.Exception.Response
-                } else {
-                    throw $_.Exception
-                }
-            }
+				if ($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded') {
+					#size limit exceeded
+					$rsp = $_.Exception.Response
+				} else {
+					throw $_.Exception
+				}
+			}
 
-            #now process the returned list of distinguishedNames and fetch required properties directly from returned objects
-            foreach ($sr in $rsp.Entries) {
-                $data=$template.Clone()
+			#now process the returned list of distinguishedNames and fetch required properties directly from returned objects
+			foreach ($sr in $rsp.Entries) {
+				$data = $template.Clone()
 
-                $rqAttr = new-object System.DirectoryServices.Protocols.SearchRequest
-                $rqAttr.DistinguishedName = $sr.DistinguishedName
-                $rqAttr.Scope = "Base"
-                $rqAttr.Controls.AddRange($AdditionalControls)
+				$rqAttr = new-object System.DirectoryServices.Protocols.SearchRequest
+				$rqAttr.DistinguishedName = $sr.DistinguishedName
+				$rqAttr.Scope = "Base"
+				$rqAttr.Controls.AddRange($AdditionalControls)
 
-                #loading just attributes indicated as present in first search
-                $rqAttr.Attributes.AddRange($sr.Attributes.AttributeNames) > $null
-                $rspAttr = $LdapConnection.SendRequest($rqAttr)
-                foreach ($srAttr in $rspAttr.Entries) {
-                    foreach($attrName in $srAttr.Attributes.AttributeNames) {
-                        $targetAttrName = GetTargetAttr -attr $attrName
-                        if($IgnoredProperties -contains $targetAttrName) {continue}
-                        if($targetAttrName -ne $attrName) {
-                            Write-Warning "Value of attribute $targetAttrName not completely retrieved as it exceeds query policy. Use ranged retrieval. Range hint: $attrName"
-                        } else {
-                            if($null -ne $data[$attrName]) {
-                                #we may have already loaded partial results from ranged hint
-                                continue
-                            }
-                        }
+				#loading just attributes indicated as present in first search
+				$rqAttr.Attributes.AddRange($sr.Attributes.AttributeNames) > $null
+				$rspAttr = $LdapConnection.SendRequest($rqAttr)
+				foreach ($srAttr in $rspAttr.Entries) {
+					foreach ($attrName in $srAttr.Attributes.AttributeNames) {
+						$targetAttrName = GetTargetAttr -attr $attrName
+						if ($IgnoredProperties -contains $targetAttrName) { continue }
+						if ($targetAttrName -ne $attrName) {
+							Write-Warning "Value of attribute $targetAttrName not completely retrieved as it exceeds query policy. Use ranged retrieval. Range hint: $attrName"
+						} else {
+							if ($null -ne $data[$attrName]) {
+								#we may have already loaded partial results from ranged hint
+								continue
+							}
+						}
 
-                        $transform = $script:RegisteredTransforms[$targetAttrName]
-                        $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($attrName -in $BinaryProperties)
-                        #protecting against LDAP servers who don't understand '1.1' prop
-                        try {
-                            if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                                try {
-                                    if($BinaryInput -eq $true) {
-                                        $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([byte[]])))
-                                    } else {
-                                        $data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([string])))
-                                    }
-                                } catch {
-                                    Write-Warning "Transform failed. Object: $($sr.DistinguishedName) `tAttribute: $targetAttrName`: $_"
-                                }
-                            } else {
-                                if($BinaryInput -eq $true) {
-                                    $data[$targetAttrName] = $srAttr.Attributes[$attrName].GetValues([byte[]])
-                                } else {
-                                    $data[$targetAttrName] = $srAttr.Attributes[$attrName].GetValues([string])
+						$transform = $script:RegisteredTransforms[$targetAttrName]
+						$BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($attrName -in $BinaryProperties)
+						#protecting against LDAP servers who don't understand '1.1' prop
+						try {
+							if ($null -ne $transform -and $null -ne $transform.OnLoad) {
+								try {
+									if ($BinaryInput -eq $true) {
+										$data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([byte[]])))
+									} else {
+										$data[$targetAttrName] = (& $transform.OnLoad -Values ($srAttr.Attributes[$attrName].GetValues([string])))
+									}
+								} catch {
+									Write-Warning "Transform failed. Object: $($sr.DistinguishedName) `tAttribute: $targetAttrName`: $_"
+								}
+							} else {
+								if ($BinaryInput -eq $true) {
+									$data[$targetAttrName] = $srAttr.Attributes[$attrName].GetValues([byte[]])
+								} else {
+									$data[$targetAttrName] = $srAttr.Attributes[$attrName].GetValues([string])
 
-                                }
-                            }
-                        } catch {
-                            Write-Error -ErrorRecord $_
-                        }
-                    }
-                }
-                if([string]::IsNullOrEmpty($data['distinguishedName'])) {
-                    #dn has to be present on all objects
-                    $transform = $script:RegisteredTransforms['distinguishedName']
-                    try {
-                        if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                            $data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
-                        } else {
-                            $data['distinguishedName']=$sr.DistinguishedName
-                        }
-                    } catch {
-                        Write-Error -ErrorRecord $_
-                    }
-                }
-                $data
-            }
-            #the response may contain paged search response. If so, we will need a cookie from it
-            [System.DirectoryServices.Protocols.PageResultResponseControl] $prrc=$rsp.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.PageResultResponseControl]}
-            if($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
-                #pass the search cookie back to server in next paged request
-                $pagedRqc.Cookie = $prrc.Cookie;
-            } else {
-                #either non paged search or we've processed last page
-                break;
-            }
-        }
-    }
+								}
+							}
+						} catch {
+							Write-Error -ErrorRecord $_
+						}
+					}
+				}
+				if ([string]::IsNullOrEmpty($data['distinguishedName'])) {
+					#dn has to be present on all objects
+					$transform = $script:RegisteredTransforms['distinguishedName']
+					try {
+						if ($null -ne $transform -and $null -ne $transform.OnLoad) {
+							$data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
+						} else {
+							$data['distinguishedName'] = $sr.DistinguishedName
+						}
+					} catch {
+						Write-Error -ErrorRecord $_
+					}
+				}
+				$data
+			}
+			#the response may contain paged search response. If so, we will need a cookie from it
+			[System.DirectoryServices.Protocols.PageResultResponseControl] $prrc = $rsp.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultResponseControl] }
+			if ($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
+				#pass the search cookie back to server in next paged request
+				$pagedRqc.Cookie = $prrc.Cookie;
+			} else {
+				#either non paged search or we've processed last page
+				break;
+			}
+		}
+	}
 }
 <#
 	Retrieves search results as series of requests: first request just returns list of returned objects, and then each property of each object is loaded by separate request.
@@ -3110,185 +3156,185 @@ function GetResultsIndirectlyInternal {
 	Total # of search requests produced is at least (N x P) + 1, where N is # of objects found and P is # of properties loaded for each object
 #>
 function GetResultsIndirectlyRangedInternal {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory)]
-        [System.DirectoryServices.Protocols.SearchRequest]
-        $rq,
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)]
+		[System.DirectoryServices.Protocols.SearchRequest]
+		$rq,
 
-        [parameter(Mandatory)]
-        [System.DirectoryServices.Protocols.LdapConnection]
-        $conn,
+		[parameter(Mandatory)]
+		[System.DirectoryServices.Protocols.LdapConnection]
+		$conn,
 
-        [parameter()]
-        [String[]]
-        $PropertiesToLoad,
+		[parameter()]
+		[String[]]
+		$PropertiesToLoad,
 
-        [parameter()]
-        [String[]]
-        $AdditionalProperties=@(),
+		[parameter()]
+		[String[]]
+		$AdditionalProperties = @(),
 
-        [parameter()]
-        [System.DirectoryServices.Protocols.DirectoryControl[]]
-        #additional controls that caller may need to add to request
-        $AdditionalControls=@(),
+		[parameter()]
+		[System.DirectoryServices.Protocols.DirectoryControl[]]
+		#additional controls that caller may need to add to request
+		$AdditionalControls = @(),
 
-        [parameter()]
-        [String[]]
-        $IgnoredProperties=@(),
+		[parameter()]
+		[String[]]
+		$IgnoredProperties = @(),
 
-        [parameter()]
-        [String[]]
-        $BinaryProperties=@(),
+		[parameter()]
+		[String[]]
+		$BinaryProperties = @(),
 
-        [parameter()]
-        [Timespan]
-        $Timeout,
+		[parameter()]
+		[Timespan]
+		$Timeout,
 
-        [parameter()]
-        [Int32]
-        $RangeSize
-    )
-    begin {
-        $template=InitializeItemTemplateInternal -props $PropertiesToLoad -additionalProps $AdditionalProperties
-    }
-    process {
-        $pagedRqc=$rq.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.PageResultRequestControl]}
-        $rq.Attributes.AddRange($PropertiesToLoad)
-        #load only attribute names now and attribute values later
-        $rq.TypesOnly=$true
-        while ($true) {
-            try {
-                if($Timeout -ne [timespan]::Zero) {
-                    $rsp = $conn.SendRequest($rq, $Timeout) -as [System.DirectoryServices.Protocols.SearchResponse]
-                } else {
-                    $rsp = $conn.SendRequest($rq) -as [System.DirectoryServices.Protocols.SearchResponse]
-                }
-            } catch [System.DirectoryServices.Protocols.DirectoryOperationException] {
-                if($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded') {
-                    #size limit exceeded
-                    $rsp = $_.Exception.Response
-                } else {
-                    throw $_.Exception
-                }
-            }
+		[parameter()]
+		[Int32]
+		$RangeSize
+	)
+	begin {
+		$template = InitializeItemTemplateInternal -props $PropertiesToLoad -additionalProps $AdditionalProperties
+	}
+	process {
+		$pagedRqc = $rq.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultRequestControl] }
+		$rq.Attributes.AddRange($PropertiesToLoad)
+		#load only attribute names now and attribute values later
+		$rq.TypesOnly = $true
+		while ($true) {
+			try {
+				if ($Timeout -ne [timespan]::Zero) {
+					$rsp = $conn.SendRequest($rq, $Timeout) -as [System.DirectoryServices.Protocols.SearchResponse]
+				} else {
+					$rsp = $conn.SendRequest($rq) -as [System.DirectoryServices.Protocols.SearchResponse]
+				}
+			} catch [System.DirectoryServices.Protocols.DirectoryOperationException] {
+				if ($null -ne $_.Exception.Response -and $_.Exception.Response.ResultCode -eq 'SizeLimitExceeded') {
+					#size limit exceeded
+					$rsp = $_.Exception.Response
+				} else {
+					throw $_.Exception
+				}
+			}
 
-            #now process the returned list of distinguishedNames and fetch required properties directly from returned objects
-            foreach ($sr in $rsp.Entries) {
-                $data=$template.Clone()
-                $rqAttr=new-object System.DirectoryServices.Protocols.SearchRequest
-                $rqAttr.DistinguishedName=$sr.DistinguishedName
-                $rqAttr.Scope="Base"
-                $rqAttr.Controls.AddRange($AdditionalControls)
+			#now process the returned list of distinguishedNames and fetch required properties directly from returned objects
+			foreach ($sr in $rsp.Entries) {
+				$data = $template.Clone()
+				$rqAttr = new-object System.DirectoryServices.Protocols.SearchRequest
+				$rqAttr.DistinguishedName = $sr.DistinguishedName
+				$rqAttr.Scope = "Base"
+				$rqAttr.Controls.AddRange($AdditionalControls)
 
-                #loading just attributes indicated as present in first search
-                foreach($attrName in $sr.Attributes.AttributeNames) {
-                    $targetAttrName = GetTargetAttr -attr $attrName
-                    if($IgnoredProperties -contains $targetAttrName) {continue}
-                    if($targetAttrName -ne $attrName) {
-                        #skip paging hint
-                        Write-Verbose "Skipping paging hint: $attrName"
-                        continue
-                    }
-                    $transform = $script:RegisteredTransforms[$attrName]
-                    $BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($attrName -in $BinaryProperties)
-                    $start=-$rangeSize
-                    $lastRange=$false
-                    while ($lastRange -eq $false) {
-                        $start += $rangeSize
-                        $rng = "$($attrName.ToLower());range=$start`-$($start+$rangeSize-1)"
-                        $rqAttr.Attributes.Clear() > $null
-                        $rqAttr.Attributes.Add($rng) > $null
-                        $rspAttr = $LdapConnection.SendRequest($rqAttr)
-                        foreach ($srAttr in $rspAttr.Entries) {
-                            #LDAP server changes upper bound to * on last chunk
-                            $returnedAttrName=$($srAttr.Attributes.AttributeNames)
-                            #load binary properties as byte stream, other properties as strings
-                            try {
-                                if($BinaryInput) {
-                                    $data[$attrName]+=$srAttr.Attributes[$returnedAttrName].GetValues([byte[]])
-                                } else {
-                                    $data[$attrName] += $srAttr.Attributes[$returnedAttrName].GetValues([string])
-                                }
-                            } catch {
-                                Write-Error -ErrorRecord $_
-                            }
-                            if($returnedAttrName.EndsWith("-*") -or $returnedAttrName -eq $attrName) {
-                                #last chunk arrived
-                                $lastRange = $true
-                            }
-                        }
-                    }
+				#loading just attributes indicated as present in first search
+				foreach ($attrName in $sr.Attributes.AttributeNames) {
+					$targetAttrName = GetTargetAttr -attr $attrName
+					if ($IgnoredProperties -contains $targetAttrName) { continue }
+					if ($targetAttrName -ne $attrName) {
+						#skip paging hint
+						Write-Verbose "Skipping paging hint: $attrName"
+						continue
+					}
+					$transform = $script:RegisteredTransforms[$attrName]
+					$BinaryInput = ($null -ne $transform -and $transform.BinaryInput -eq $true) -or ($attrName -in $BinaryProperties)
+					$start = - $rangeSize
+					$lastRange = $false
+					while ($lastRange -eq $false) {
+						$start += $rangeSize
+						$rng = "$($attrName.ToLower());range=$start`-$($start+$rangeSize-1)"
+						$rqAttr.Attributes.Clear() > $null
+						$rqAttr.Attributes.Add($rng) > $null
+						$rspAttr = $LdapConnection.SendRequest($rqAttr)
+						foreach ($srAttr in $rspAttr.Entries) {
+							#LDAP server changes upper bound to * on last chunk
+							$returnedAttrName = $($srAttr.Attributes.AttributeNames)
+							#load binary properties as byte stream, other properties as strings
+							try {
+								if ($BinaryInput) {
+									$data[$attrName] += $srAttr.Attributes[$returnedAttrName].GetValues([byte[]])
+								} else {
+									$data[$attrName] += $srAttr.Attributes[$returnedAttrName].GetValues([string])
+								}
+							} catch {
+								Write-Error -ErrorRecord $_
+							}
+							if ($returnedAttrName.EndsWith("-*") -or $returnedAttrName -eq $attrName) {
+								#last chunk arrived
+								$lastRange = $true
+							}
+						}
+					}
 
-                    #perform transform if registered
-                    if($null -ne $transform -and $null -ne $transform.OnLoad) {
-                        try {
-                            $data[$attrName] = (& $transform.OnLoad -Values $data[$attrName])
-                        } catch {
+					#perform transform if registered
+					if ($null -ne $transform -and $null -ne $transform.OnLoad) {
+						try {
+							$data[$attrName] = (& $transform.OnLoad -Values $data[$attrName])
+						} catch {
 							Write-Warning "Transform failed. Object: $($sr.DistinguishedName) `tAttribute: $targetAttrName`: $_"
-                        }
-                    }
-                }
-                if ([string]::IsNullOrEmpty($data['distinguishedName'])) {
-                    #dn has to be present on all objects
-                    $transform = $script:RegisteredTransforms['distinguishedName']
-                    try {
-                        if ($null -ne $transform -and $null -ne $transform.OnLoad) {
-                            $data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
-                        } else {
-                            $data['distinguishedName'] = $sr.DistinguishedName
-                        }
-                    } catch {
-                        Write-Error -ErrorRecord $_
-                    }
-                }
-                $data
-            }
-            #the response may contain paged search response. If so, we will need a cookie from it
-            [System.DirectoryServices.Protocols.PageResultResponseControl] $prrc=$rsp.Controls | Where-Object{$_ -is [System.DirectoryServices.Protocols.PageResultResponseControl]}
-            if($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
-                #pass the search cookie back to server in next paged request
-                $pagedRqc.Cookie = $prrc.Cookie;
-            } else {
-                #either non paged search or we've processed last page
-                break;
-            }
-        }
-    }
+						}
+					}
+				}
+				if ([string]::IsNullOrEmpty($data['distinguishedName'])) {
+					#dn has to be present on all objects
+					$transform = $script:RegisteredTransforms['distinguishedName']
+					try {
+						if ($null -ne $transform -and $null -ne $transform.OnLoad) {
+							$data['distinguishedName'] = & $transform.OnLoad -Values $sr.DistinguishedName
+						} else {
+							$data['distinguishedName'] = $sr.DistinguishedName
+						}
+					} catch {
+						Write-Error -ErrorRecord $_
+					}
+				}
+				$data
+			}
+			#the response may contain paged search response. If so, we will need a cookie from it
+			[System.DirectoryServices.Protocols.PageResultResponseControl] $prrc = $rsp.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultResponseControl] }
+			if ($null -ne $prrc -and $prrc.Cookie.Length -ne 0 -and $null -ne $pagedRqc) {
+				#pass the search cookie back to server in next paged request
+				$pagedRqc.Cookie = $prrc.Cookie;
+			} else {
+				#either non paged search or we've processed last page
+				break;
+			}
+		}
+	}
 }
 <#
     Process ranged retrieval hints
 #>
 function GetTargetAttr {
-    param (
-        [Parameter(Mandatory)]
-        [string]$attr
-    )
+	param (
+		[Parameter(Mandatory)]
+		[string]$attr
+	)
 
-    process {
-        $targetAttr = $attr
-        $m = [System.Text.RegularExpressions.Regex]::Match($attr,';range=.+');  #this is to skip range hints provided by DC
-        if($m.Success) {
-            $targetAttr = $($attr.Substring(0,$m.Index))
-        }
-        $targetAttr
-    }
+	process {
+		$targetAttr = $attr
+		$m = [System.Text.RegularExpressions.Regex]::Match($attr, ';range=.+');  #this is to skip range hints provided by DC
+		if ($m.Success) {
+			$targetAttr = $($attr.Substring(0, $m.Index))
+		}
+		$targetAttr
+	}
 }
 <#
     Helper that creates output object template used by Find-LdapObject command, based on required properties to be returned
 #>
 Function InitializeItemTemplateInternal {
-    param (
-        [string[]]$props,
-        [string[]]$additionalProps
-    )
+	param (
+		[string[]]$props,
+		[string[]]$additionalProps
+	)
 
-    process {
-        $template=@{}
-        foreach($prop in $additionalProps) {$template[$prop]= $null}
-        foreach($prop in $props) {$template[$prop]=$null}
-        $template
-    }
+	process {
+		$template = @{}
+		foreach ($prop in $additionalProps) { $template[$prop] = $null }
+		foreach ($prop in $props) { $template[$prop] = $null }
+		$template
+	}
 }
 #endregion Internal commands
 
@@ -3298,7 +3344,7 @@ $referencedAssemblies = @()
 if ($PSVersionTable.PSEdition -eq 'Core') { $referencedAssemblies += 'System.Security.Principal.Windows' }
 
 # Add compiled helpers. Load only if not loaded previously
-$helpers = $sdspModuleHelpers | Get-Member | Where-Object {$_.MemberType -eq "NoteProperty"} | ForEach-Object {$_.Name}
+$helpers = $sdspModuleHelpers | Get-Member | Where-Object { $_.MemberType -eq "NoteProperty" } | ForEach-Object { $_.Name }
 foreach ($helper in $helpers) {
 	if ($null -eq ($helper -as [type])) {
 		#$definition = Get-Content "$PSScriptRoot\Helpers\$helper.cs" -Raw
@@ -3648,6 +3694,7 @@ $unicodePwd_ps1_attributes | ForEach-Object {
 
 ### FUNCTION: Logging Data To The Log File
 Function writeLog {
+	[CmdletBinding()]
 	Param(
 		[string]$dataToLog,
 		[string]$lineType,
@@ -3713,52 +3760,55 @@ Function writeLog {
 		}
 	}
 }
-$loggingDef = "function Logging{${function:Logging}}"
+$writeLogDef = "function writeLog{${function:writeLog}}"
 
 ### FUNCTION: Validating The XML Configuration File For The Presence Of Nodes
 Function validateXMLConfigFileForNodes {
+	[CmdletBinding()]
 	Param(
 		[XML]$configSettings
 	)
 
-	$requiredXmlNodes = @()
-	$requiredXmlNodes += "xmlReleaseVersion"
-	$requiredXmlNodes += "xmlReleaseDate"
-	$requiredXmlNodes += "useXMLConfigFileSettings"
-	$requiredXmlNodes += "connectionTimeoutInMilliSeconds"
-	$requiredXmlNodes += "goldenTicketMonitorWaitingIntervalBetweenRunsInSeconds"
-	$requiredXmlNodes += "goldenTicketMonitoringPeriodInSeconds"
-	$requiredXmlNodes += "resetRoutineEnabled"
-	$requiredXmlNodes += "resetRoutineFirstResetIntervalInDays"
-	$requiredXmlNodes += "resetRoutineSecondResetIntervalInDays"
-	$requiredXmlNodes += "resetRoutineAttributeForResetState"
-	$requiredXmlNodes += "resetRoutineAttributeForResetDateAction1"
-	$requiredXmlNodes += "resetRoutineAttributeForResetDateAction2"
-	$requiredXmlNodes += "sendMailEnabled"
-	$requiredXmlNodes += "smtpServer"
-	$requiredXmlNodes += "smtpPort"
-	$requiredXmlNodes += "useSSL"
-	$requiredXmlNodes += "smtpCredsType"
-	$requiredXmlNodes += "smtpCredsUserName"
-	$requiredXmlNodes += "smtpCredsPassword"
-	$requiredXmlNodes += "mailSubject"
-	$requiredXmlNodes += "mailPriority"
-	$requiredXmlNodes += "mailBody"
-	$requiredXmlNodes += "mailFromSender"
-	$requiredXmlNodes += "mailToRecipients"
-	$requiredXmlNodes += "mailCcRecipients"
+	$requiredXmlNodes = [System.Collections.Generic.List[string]]::new()
+	$requiredXmlNodes.Add("xmlReleaseVersion")
+	$requiredXmlNodes.Add("xmlReleaseDate")
+	$requiredXmlNodes.Add("useXMLConfigFileSettings")
+	$requiredXmlNodes.Add("connectionTimeoutInMilliSeconds")
+	$requiredXmlNodes.Add("goldenTicketMonitorWaitingIntervalBetweenRunsInSeconds")
+	$requiredXmlNodes.Add("goldenTicketMonitoringPeriodInSeconds")
+	$requiredXmlNodes.Add("resetRoutineEnabled")
+	$requiredXmlNodes.Add("resetRoutineFirstResetIntervalInDays")
+	$requiredXmlNodes.Add("resetRoutineSecondResetIntervalInDays")
+	$requiredXmlNodes.Add("resetRoutineAttributeForResetState")
+	$requiredXmlNodes.Add("resetRoutineAttributeForResetDateAction1")
+	$requiredXmlNodes.Add("resetRoutineAttributeForResetDateAction2")
+	$requiredXmlNodes.Add("sendMailEnabled")
+	$requiredXmlNodes.Add("mailReplacementOptionsSUBJECT")
+	$requiredXmlNodes.Add("mailReplacementOptionsBODY")
+	$requiredXmlNodes.Add("smtpServer")
+	$requiredXmlNodes.Add("smtpPort")
+	$requiredXmlNodes.Add("useSSL")
+	$requiredXmlNodes.Add("smtpCredsType")
+	$requiredXmlNodes.Add("smtpCredsUserName")
+	$requiredXmlNodes.Add("smtpCredsPassword")
+	$requiredXmlNodes.Add("mailSubject")
+	$requiredXmlNodes.Add("mailPriority")
+	$requiredXmlNodes.Add("mailBody")
+	$requiredXmlNodes.Add("mailFromSender")
+	$requiredXmlNodes.Add("mailToRecipients")
+	$requiredXmlNodes.Add("mailCcRecipients")
 
-	$nodesMissing = @()
-	$nodesPresent = @()
+	$nodesMissing = [System.Collections.Generic.List[string]]::new()
+	$nodesPresent = [System.Collections.Generic.List[string]]::new()
 
 	$requiredXmlNodes | ForEach-Object {
-		If ($($script:configResetKrbTgtPasswordSettings.SelectNodes("//resetKrbTgtPassword/$($_)")) -eq $null) {
-			$nodesMissing += $_
+		If ($null -eq $($script:configResetKrbTgtPasswordSettings.SelectNodes("//resetKrbTgtPassword/$($_)"))) {
+			$nodesMissing.Add($_)
 		} Else {
-			$nodesPresent += $_
+			$nodesPresent.Add($_)
 		}
 	}
-	
+
 	If (($nodesMissing | Measure-Object).Count -gt 0) {
 		Write-Host ""
 		Write-Host "====================================================" -ForeGroundColor Magenta
@@ -3789,6 +3839,7 @@ Function validateXMLConfigFileForNodes {
 
 ### FUNCTION: Logging Data To The Log File
 Function cleanUpOldLogs {
+	[CmdletBinding()]
 	Param(
 		[string]$folder,
 		[string]$filterName,
@@ -3806,13 +3857,7 @@ Function cleanUpOldLogs {
 			} Catch {
 				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "Failed To Delete The $fileType File '$($_.FullName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeExceptionLogError -exceptionRecord $($_)
 			}
 		}
 	} Else {
@@ -3839,7 +3884,7 @@ Function portConnectionCheck {
 			The Number Of Milliseconds For The Time Out
 	#>
 
-	[cmdletbinding()]
+	[CmdletBinding()]
 	Param(
 		[Parameter(Mandatory = $TRUE)]
 		[string]$serverIPOrFQDN,
@@ -3858,7 +3903,7 @@ Function portConnectionCheck {
 
 		$result = "ERROR"
 		$regexIPv4 = "^(?:(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)\.){3}(?:0?0?\d|0?[1-9]\d|1\d\d|2[0-5][0-5]|2[0-4]\d)$"
-		$serverIPv4s = @()
+		$serverIPv4s = [System.Collections.Generic.List[string]]::new()
 	}
 
 	Process {
@@ -3868,19 +3913,19 @@ Function portConnectionCheck {
 			$dnsHostEntry = $null
 			Try {
 				$dnsHostEntry = [System.Net.Dns]::GetHostEntry($serverIPOrFQDN)
-				($dnsHostEntry.AddressList | Where-Object {$_.AddressFamily -eq "InterNetwork"}).IPAddressToString | ForEach-Object {
-					$serverIPv4s += $_
+				($dnsHostEntry.AddressList | Where-Object { $_.AddressFamily -eq "InterNetwork" }).IPAddressToString | ForEach-Object {
+					$serverIPv4s.Add($_)
 				}
 			} Catch {
 				# FOR TESTING ONLY
 				<#
 				Write-Host "Name Failed To Resolve..." -ForegroundColor Red
 				#>
-				
+
 				Return $result
 			}
 		} Else {
-			$serverIPv4s += $serverIPOrFQDN
+			$serverIPv4s.Add($serverIPOrFQDN)
 		}
 
 		# FOR TESTING ONLY
@@ -3897,7 +3942,7 @@ Function portConnectionCheck {
 		If (($serverIPv4s | Measure-Object).Count -gt 0) { # If No IPv4 Address Exists, Return An Error
 			$serverIPv4s | ForEach-Object {
 				$serverIPv4 = $_
-				
+
 				If ($result -eq "ERROR") {
 					$tcpPortSocket = $null
 					$tcpPortSocket = New-Object System.Net.Sockets.TcpClient
@@ -3949,6 +3994,7 @@ Function portConnectionCheck {
 
 ### FUNCTION: Load Required PowerShell Modules
 Function loadPoSHModules {
+	[CmdletBinding()]
 	Param (
 		[string]$poshModule,
 		[bool]$ignoreRemote
@@ -4062,7 +4108,7 @@ Function Set-Window {
 
 	#>
 	[OutputType('System.Automation.WindowInfo')]
-	[cmdletbinding()]
+	[CmdletBinding()]
 	Param (
 		[parameter(ValueFromPipelineByPropertyName = $True)]
 		$ProcessName,
@@ -4135,6 +4181,29 @@ Function Set-Window {
 	}
 }
 
+### FUNCTION: Setup An LDAP Connection
+Function setupLdapConnection {
+	[CmdletBinding()]
+	Param (
+		[string]$ldapServerFQDN,
+		[bool]$localADforest,
+		[PSCredential]$adminCrds
+	)
+
+	Try {
+		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
+			$ldapConnection = Get-LdapConnection -LdapServer:$ldapServerFQDN -EncryptionType Kerberos
+		}
+		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+			$ldapConnection = Get-LdapConnection -LdapServer:$ldapServerFQDN -EncryptionType Kerberos -Credential $adminCrds
+		}
+
+		Return $ldapConnection
+	} Catch {
+		EXIT
+	}
+}
+
 ### FUNCTION: Test Account Is "NT AUTHORITY\SYSTEM" (SID: S-1-5-18)
 Function testAccountIsSystemOnRWDC {
 	# Determine Current User
@@ -4165,6 +4234,7 @@ Function testAccountIsSystemOnRWDC {
 
 ### FUNCTION: Test Credentials For Specific Admin Role
 Function testAdminRole {
+	[CmdletBinding()]
 	Param (
 		[string]$adminRole
 	)
@@ -4181,26 +4251,25 @@ Function requestForAdminCreds {
 	# Ask For The Remote Credentials
 	$adminUserAccount = $null
 	Do {
-		writeLog -dataToLog "Please provide an account (<DOMAIN FQDN>\<ACCOUNT>) that is a member of the 'Administrators' group in every AD domain of the specified AD forest: " -lineType "ACTION-NO-NEW-LINE" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Please provide an account (<DOMAIN FQDN>\<ACCOUNT>) that is a member of the 'Administrators' group in the targeted AD domain: " -lineType "ACTION-NO-NEW-LINE" -logFileOnly $false -noDateTimeInLogLine $false
 		$adminUserAccount = Read-Host
 	} Until (-not [string]::IsNullOrEmpty($adminUserAccount) -And $adminUserAccount -match "^[a-zA-Z0-9_.-]*\\[a-zA-Z0-9_.-]*$")
 
 	# Ask For The Corresponding Password
-	$adminUserPasswordString = $null
+	$adminUserPasswordSecureString = $null
 	Do {
 		writeLog -dataToLog "Please provide the corresponding password of that admin account: " -lineType "ACTION-NO-NEW-LINE" -logFileOnly $false -noDateTimeInLogLine $false
 		[System.Security.SecureString]$adminUserPasswordSecureString = Read-Host -AsSecureString -ErrorAction SilentlyContinue
 	} Until ($adminUserPasswordSecureString.Length -gt 0)
-	[string]$adminUserPasswordString = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($adminUserPasswordSecureString))
-	$secureAdminUserPassword = ConvertTo-SecureString $adminUserPasswordString -AsPlainText -Force
 	$adminCrds = $null
-	$adminCrds = New-Object System.Management.Automation.PSCredential $adminUserAccount, $secureAdminUserPassword
+	$adminCrds = New-Object System.Management.Automation.PSCredential $adminUserAccount, $adminUserPasswordSecureString
 
 	Return $adminCrds
 }
 
 ### FUNCTION: Create Temporary Canary Object
 Function createTempCanaryObject {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
 		[string]$krbTgtSamAccountName,
@@ -4230,66 +4299,35 @@ Function createTempCanaryObject {
 
 	# Try To Create The Canary Object In The AD Domain And If Not Successful Throw Error
 	Try {
-		$contactObject = [PSCustomObject]@{distinguishedName = $null; objectClass = $null; displayName = $null; description = $null }
-		$contactObject.DistinguishedName = "CN=$targetObjectToCheckName,$containerForTempCanaryObject"
-		$contactObject.objectClass = "contact"
-		$contactObject.displayName = $targetObjectToCheckName
-		$contactObject.description = $targetObjectToCheckDescription
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			Add-LdapObject -LdapConnection $ldapConnection -Object $contactObject
-			$ldapConnection.Dispose()
+		$contactObject = [PSCustomObject]@{
+			distinguishedName	= "CN=$targetObjectToCheckName,$containerForTempCanaryObject"
+			objectClass       = "contact"
+			displayName       = $targetObjectToCheckName
+			description       = $targetObjectToCheckDescription
 		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			Add-LdapObject -LdapConnection $ldapConnection -Object $contactObject
-			$ldapConnection.Dispose()
-		}
+
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		Add-LdapObject -LdapConnection $ldapConnection -Object $contactObject
 	} Catch {
 		writeLog -dataToLog "  --> Temp Canary Object [$targetObjectToCheckDN] FAILED TO BE CREATED on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	}
-
-	# Check The Temporary Canary Object Exists And Was created In AD
-	$targetObjectToCheck = $null
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=contact)(name=$targetObjectToCheckName))"
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Contact Object With 'name=$targetObjectToCheckName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=contact)(name=$targetObjectToCheckName))"
+	# Check The Temporary Canary Object Exists And Was created In AD
+	$targetObjectToCheck = $null
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=contact)(name=$targetObjectToCheckName))" -PropertiesToLoad "1.1"
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Contact Object With 'name=$targetObjectToCheckName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Contact Object With 'name=$targetObjectToCheckName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 	If ($(-not [string]::IsNullOrEmpty($targetObjectToCheck))) {
@@ -4305,6 +4343,7 @@ Function createTempCanaryObject {
 ### FUNCTION: Confirm Generated Password Meets Complexity Requirements
 # Source: https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/password-must-meet-complexity-requirements
 Function confirmPasswordIsComplex {
+	[CmdletBinding()]
 	Param (
 		[string]$passwd
 	)
@@ -4337,6 +4376,7 @@ Function confirmPasswordIsComplex {
 
 ### FUNCTION: Generate New Complex Password
 Function generateNewComplexPassword {
+	[CmdletBinding()]
 	Param (
 		[int]$passwdNrChars
 	)
@@ -4355,6 +4395,8 @@ Function generateNewComplexPassword {
 			Do {
 				[byte[]]$byte = [byte]1
 				$rng.GetBytes($byte)
+				# https://www.ascii-code.com/
+				# All Between 33 And 126 Are Characters That Can And Will Be Used In Passwords
 				If ($byte[0] -lt 33 -or $byte[0] -gt 126) {
 					CONTINUE
 				}
@@ -4371,6 +4413,7 @@ Function generateNewComplexPassword {
 
 ### FUNCTION: Retrieve The Metadata Of An Object
 Function retrieveObjectMetadata {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
 		[string]$ObjectDN,
@@ -4384,6 +4427,7 @@ Function retrieveObjectMetadata {
 		$targetedADdomainRWDCContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("DirectoryServer", $targetedADdomainRWDCFQDN)
 	}
 	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+		# The 'DirectoryContext' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 		$targetedADdomainRWDCContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("DirectoryServer", $targetedADdomainRWDCFQDN, $($adminCrds.UserName), $($adminCrds.GetNetworkCredential().Password))
 	}
 	$targetedADdomainRWDCObject = $null
@@ -4398,13 +4442,7 @@ Function retrieveObjectMetadata {
 		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
 			writeLog -dataToLog "Error Getting Metadata From '$targetedADdomainRWDCFQDN' For Object '$krbTgtObjectBeforeDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
 	}
 
 	If ($objectMetadata) {
@@ -4414,6 +4452,7 @@ Function retrieveObjectMetadata {
 
 ### FUNCTION: Edit The AD Account And/Or Reset The Password
 Function editADAccount {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
 		[string]$krbTgtSamAccountName,
@@ -4424,38 +4463,16 @@ Function editADAccount {
 
 	# Retrieve The KrgTgt Object In The AD Domain BEFORE THE PASSWORD SET
 	$krbTgtObjectBefore = $null
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			$krbTgtObjectBefore = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		$krbTgtObjectBefore = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			$krbTgtObjectBefore = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 
@@ -4497,95 +4514,54 @@ Function editADAccount {
 			distinguishedName = $krbTgtObjectBeforeDN
 		}
 		If ("ResetPassword" -in $listOfEdits.Keys -And $listOfEdits["ResetPassword"] -eq $true) {
-			$krbTgtObj | Add-Member -MemberType NoteProperty -Name unicodePwd -Value $newKrbTgtPassword
+			$krbTgtObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("unicodePwd", $newKrbTgtPassword))
 		}
 		If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") {
 			If ($($script:resetRoutineAttributeForResetDateAction1) -in $listOfEdits.Keys) {
-				$krbTgtObj | Add-Member -MemberType NoteProperty -Name $($script:resetRoutineAttributeForResetDateAction1) -Value $listOfEdits[$($script:resetRoutineAttributeForResetDateAction1)]
+				$krbTgtObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new($($script:resetRoutineAttributeForResetDateAction1), $listOfEdits[$($script:resetRoutineAttributeForResetDateAction1)]))
 			}
 			If ($($script:resetRoutineAttributeForResetDateAction2) -in $listOfEdits.Keys) {
-				$krbTgtObj | Add-Member -MemberType NoteProperty -Name $($script:resetRoutineAttributeForResetDateAction2) -Value $listOfEdits[$($script:resetRoutineAttributeForResetDateAction2)]
+				$krbTgtObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new($($script:resetRoutineAttributeForResetDateAction2), $listOfEdits[$($script:resetRoutineAttributeForResetDateAction2)]))
 			}
 			If ($($script:resetRoutineAttributeForResetState) -in $listOfEdits.Keys) {
-				$krbTgtObj | Add-Member -MemberType NoteProperty -Name $($script:resetRoutineAttributeForResetState) -Value $listOfEdits[$($script:resetRoutineAttributeForResetState)]
+				$krbTgtObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new($($script:resetRoutineAttributeForResetState), $listOfEdits[$($script:resetRoutineAttributeForResetState)]))
 			}
 		}
 
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			If ("ResetPassword" -in $listOfEdits.Keys -And $listOfEdits["ResetPassword"] -eq $true) {
-				Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObj -BinaryProps unicodePwd
-				$script:numAccntsResetSUCCESS += 1
-			} Else {
-				Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObj
-			}
-			$ldapConnection.Dispose()
-		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			If ("ResetPassword" -in $listOfEdits.Keys -And $listOfEdits["ResetPassword"] -eq $true) {
-				Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObj -BinaryProps unicodePwd
-				$script:numAccntsResetSUCCESS += 1
-			} Else {
-				Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObj
-			}
-			$ldapConnection.Dispose()
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		If ("ResetPassword" -in $listOfEdits.Keys -And $listOfEdits["ResetPassword"] -eq $true) {
+			Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObj -BinaryProps unicodePwd
+			$script:numAccntsResetSUCCESS += 1
+		} Else {
+			Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObj
 		}
 	} Catch {
 		writeLog -dataToLog ""
 		writeLog -dataToLog "  --> Editing and/or setting the new password for [$krbTgtObjectBeforeDN] FAILED on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
 		$script:numAccntsResetFAIL += 1
+	} Finally {
+		If ($null -ne $ldapConnection) {
+			$ldapConnection.Dispose()
+		}
 	}
 
 	# Retrieve The KrgTgt Object In The AD Domain AFTER THE PASSWORD SET
 	$krbTgtObjectAfter = $null
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			If (($listOfEdits.Keys | Measure-Object).Count -gt 1) {
-				$krbTgtObjectAfter = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset", $($script:resetRoutineAttributeForResetDateAction1), $($script:resetRoutineAttributeForResetDateAction2), $($script:resetRoutineAttributeForResetState))
-			} Else {
-				$krbTgtObjectAfter = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
-			}
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		If (($listOfEdits.Keys | Measure-Object).Count -gt 1) {
+			$krbTgtObjectAfter = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset", $($script:resetRoutineAttributeForResetDateAction1), $($script:resetRoutineAttributeForResetDateAction2), $($script:resetRoutineAttributeForResetState))
+		} Else {
+			$krbTgtObjectAfter = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
 		}
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			If (($listOfEdits.Keys | Measure-Object).Count -gt 1) {
-				$krbTgtObjectAfter = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset", $($script:resetRoutineAttributeForResetDateAction1), $($script:resetRoutineAttributeForResetDateAction2), $($script:resetRoutineAttributeForResetState))
-			} Else {
-				$krbTgtObjectAfter = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
-			}
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 
@@ -4613,7 +4589,7 @@ Function editADAccount {
 	writeLog -dataToLog "  --> Previous Password Set Date/Time.......: '$krbTgtObjectBeforePwdLastSet'"
 	writeLog -dataToLog "  --> Max TGT Lifetime (Hours)..............: '$($script:targetedADdomainMaxTgtLifetimeHrs)'"
 	writeLog -dataToLog "  --> Max TGT Lifetime Sourced From.........: '$($script:targetedADdomainMaxTgtLifetimeHrsSourceGPO)'"
-	writeLog -dataToLog "  --> Max Clock Skew (Minutes)..............: '$($script:targetedADdomainMaxClockSkewMins)'"	
+	writeLog -dataToLog "  --> Max Clock Skew (Minutes)..............: '$($script:targetedADdomainMaxClockSkewMins)'"
 	writeLog -dataToLog "  --> Max Clock Skew Sourced From...........: '$($script:targetedADdomainMaxClockSkewMinsSourceGPO)'"
 	writeLog -dataToLog "  --> Date/Time N-1 Kerberos Tickets........: '$(Get-Date $expirationTimeForNMinusOneKerbTickets -f 'yyyy-MM-dd HH:mm:ss')'"
 	writeLog -dataToLog "  --> Date/Time Now (When Script Started)...: '$(Get-Date $execDateTime -f 'yyyy-MM-dd HH:mm:ss')'"
@@ -4652,6 +4628,7 @@ Function editADAccount {
 ### FUNCTION: Replicate Single AD Object
 # INFO: https://msdn.microsoft.com/en-us/library/cc223306.aspx
 Function replicateSingleADObject {
+	[CmdletBinding()]
 	Param (
 		[string]$sourceDCNTDSSettingsObjectDN,
 		[string]$targetDCFQDN,
@@ -4669,28 +4646,17 @@ Function replicateSingleADObject {
 		} Catch {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "Error Connecting To '$targetDCFQDN' For 'rootDSE'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
 		}
 	}
 	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
 		Try {
+			# The 'DirectoryEntry' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 			$rootDSE = New-Object System.DirectoryServices.DirectoryEntry(("LDAP://$targetDCFQDN/rootDSE"), $($adminCrds.UserName), $($adminCrds.GetNetworkCredential().password))
 		} Catch {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "Error Connecting To '$targetDCFQDN' For 'rootDSE' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
 		}
 	}
 
@@ -4701,13 +4667,7 @@ Function replicateSingleADObject {
 		} Catch {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "Replicate Single Object (Full) Failed From '$sourceDCNTDSSettingsObjectDN' To '$targetDCFQDN' For Object '$objectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
 		}
 	}
 
@@ -4718,13 +4678,7 @@ Function replicateSingleADObject {
 		} Catch {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "Replicate Single Object (Secrets Only) Failed From '$sourceDCNTDSSettingsObjectDN' To '$targetDCFQDN' For Object '$objectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
 		}
 	}
 
@@ -4734,18 +4688,13 @@ Function replicateSingleADObject {
 	} Catch {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Triggering Replicate Single Object On '$targetDCFQDN' From '$sourceDCNTDSSettingsObjectDN' Failed For Object '$objectDN' Using The '$contentScope' Scope..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
 	}
 }
 
 ### FUNCTION: Delete/Cleanup Temporary Canary Object
 Function deleteTempCanaryObject {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
 		[string]$targetObjectToCheckDN,
@@ -4755,62 +4704,30 @@ Function deleteTempCanaryObject {
 
 	# Try To Delete The Canary Object In The AD Domain And If Not Successful Throw Error
 	Try {
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			Remove-LdapObject -LdapConnection $ldapConnection -Object $targetObjectToCheckDN
-			$ldapConnection.Dispose()
-		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			Remove-LdapObject -LdapConnection $ldapConnection -Object $targetObjectToCheckDN
-			$ldapConnection.Dispose()
-		}
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		Remove-LdapObject -LdapConnection $ldapConnection -Object $targetObjectToCheckDN
 	} Catch {
 		writeLog -dataToLog "  --> Temp Canary Object [$targetObjectToCheckDN] FAILED TO BE DELETED on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "  --> Manually delete the Temp Canary Object [$targetObjectToCheckDN] on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
+			$ldapConnection.Dispose()
+		}
 	}
 
 	# Retrieve The Temporary Canary Object From The AD Domain And If It Does Not Exist It Was Deleted Successfully
 	$targetObjectToCheck = $null
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)" -PropertiesToLoad "1.1"
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$targetObjectToCheckDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 	If ([string]::IsNullOrEmpty($targetObjectToCheck)) {
@@ -4821,6 +4738,7 @@ Function deleteTempCanaryObject {
 
 ### FUNCTION: Check AD Replication Convergence
 Function checkADReplicationConvergence {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainFQDN,
 		[string]$targetedADdomainSourceRWDCFQDN,
@@ -4894,38 +4812,16 @@ Function checkADReplicationConvergence {
 			If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6) {
 				# Retrieve The Object From The Source Originating RWDC
 				$objectOnSourceOrgRWDC = $null
-				If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-					Try {
-						$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos
-						$objectOnSourceOrgRWDC = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)" -PropertiesToLoad @("pwdlastset")
+				Try {
+					$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainSourceRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+					$objectOnSourceOrgRWDC = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)" -PropertiesToLoad @("pwdlastset")
+				} Catch {
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For Object '$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
+				} Finally {
+					If ($null -ne $ldapConnection) {
 						$ldapConnection.Dispose()
-					} Catch {
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For Object '$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					}
-				}
-				If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-					Try {
-						$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-						$objectOnSourceOrgRWDC = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)" -PropertiesToLoad @("pwdlastset")
-						$ldapConnection.Dispose()
-					} Catch {
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For Object '$targetObjectToCheckDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					}
 				}
 
@@ -4988,38 +4884,16 @@ Function checkADReplicationConvergence {
 				# For Mode 2 From The DC to Check Retrieve The AD Object Of The Temporary Canary Object That Was Created On The Source (Originating) RWDC
 				If ($modeOfOperationNr -eq 2) {
 					$targetObjectToCheck = $null
-					If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-						Try {
-							$ldapConnection = Get-LdapConnection -LdapServer:$dcToCheckHostName -EncryptionType Kerberos
-							$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
+					Try {
+						$ldapConnection = setupLdapConnection -ldapServerFQDN $dcToCheckHostName -localADforest $localADforest -adminCrds $adminCrds
+						$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
+					} Catch {
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error Querying AD Against '$dcToCheckHostName' For Object With 'distinguishedName=$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeExceptionLogError -exceptionRecord $($_)
+					} Finally {
+						If ($null -ne $ldapConnection) {
 							$ldapConnection.Dispose()
-						} Catch {
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error Querying AD Against '$dcToCheckHostName' For Object With 'distinguishedName=$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						}
-					}
-					If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-						Try {
-							$ldapConnection = Get-LdapConnection -LdapServer:$dcToCheckHostName -EncryptionType Kerberos -Credential $adminCrds
-							$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
-							$ldapConnection.Dispose()
-						} Catch {
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error Querying AD Against '$dcToCheckHostName' For User Object With 'distinguishedName=$targetObjectToCheckDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 						}
 					}
 				}
@@ -5028,38 +4902,16 @@ Function checkADReplicationConvergence {
 				If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6) {
 					# Retrieve The Object From The Target DC
 					$objectOnTargetDC = $null
-					If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-						Try {
-							$ldapConnection = Get-LdapConnection -LdapServer:$dcToCheckHostName -EncryptionType Kerberos
-							$objectOnTargetDC = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)" -PropertiesToLoad @("pwdlastset")
+					Try {
+						$ldapConnection = setupLdapConnection -ldapServerFQDN $dcToCheckHostName -localADforest $localADforest -adminCrds $adminCrds
+						$objectOnTargetDC = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)" -PropertiesToLoad @("pwdlastset")
+					} Catch {
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error Querying AD Against '$dcToCheckHostName' For Object '$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeExceptionLogError -exceptionRecord $($_)
+					} Finally {
+						If ($null -ne $ldapConnection) {
 							$ldapConnection.Dispose()
-						} Catch {
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error Querying AD Against '$dcToCheckHostName' For Object '$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						}
-					}
-					If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-						Try {
-							$ldapConnection = Get-LdapConnection -LdapServer:$dcToCheckHostName -EncryptionType Kerberos -Credential $adminCrds
-							$objectOnTargetDC = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)" -PropertiesToLoad @("pwdlastset")
-							$ldapConnection.Dispose()
-						} Catch {
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error Querying AD Against '$dcToCheckHostName' For Object '$targetObjectToCheckDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 						}
 					}
 
@@ -5165,38 +5017,16 @@ Function checkADReplicationConvergence {
 	If ($modeOfOperationNr -eq 2) {
 		# Retrieve The Temp Canary Object From The Source (Originating) RWDC
 		$targetObjectToCheck = $null
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos
-				$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
+		Try {
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainSourceRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+			$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
+		} Catch {
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For Object '$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
 				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For Object '$targetObjectToCheckDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-				$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$targetObjectToCheckDN)"
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For Object '$targetObjectToCheckDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			}
 		}
 
@@ -5218,14 +5048,40 @@ Function checkADReplicationConvergence {
 
 ### FUNCTION: Determine The User Account To Use For RSoP
 Function determineUserAccountForRSoP {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
-		[string]$targetedADdomainDomainSID
+		[string]$targetedADdomainDomainSID,
+		[bool]$localADforest,
+		[PSCredential]$adminCrds
 	)
 
 	# Try To Get All User Profiles That Match The Targeted AD Domain Sid
 	Try {
-		$sidOfProfilesOfTargetedDomainOnDC = Get-CimInstance Win32_UserProfile -ComputerName $targetedADdomainRWDCFQDN -ErrorAction STOP | Where-Object { $_.SID -match $targetedADdomainDomainSID } | ForEach-Object { $_.SID }
+		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
+			If ($fqdnComputerInDNS -eq $targetedADdomainRWDCFQDN) {
+				$sidOfProfilesOfTargetedDomainOnDC = Get-CimInstance -Class Win32_UserProfile -ErrorAction STOP | Where-Object { $_.SID -match $targetedADdomainDomainSID } | ForEach-Object { $_.SID }
+			} Else {
+				$sidOfProfilesOfTargetedDomainOnDC = Get-CimInstance -Class Win32_UserProfile -ComputerName $targetedADdomainRWDCFQDN -ErrorAction STOP | Where-Object { $_.SID -match $targetedADdomainDomainSID } | ForEach-Object { $_.SID }
+			}
+			$adminUsrSID = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+		}
+		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+			$targetedServerSession = New-PSSession -ComputerName $targetedADdomainRWDCFQDN -Credential $adminCrds -ErrorAction STOP
+			$sidOfProfilesOfTargetedDomainOnDC, $adminUsrSID = Invoke-Command -Session $targetedServerSession -ArgumentList $targetedADdomainRWDCFQDN, $targetedADdomainDomainSID -ScriptBlock {
+				[CmdletBinding()]
+				Param (
+					$targetedADdomainRWDCFQDN,
+					$targetedADdomainDomainSID
+				)
+
+				$sidOfProfilesOfTargetedDomainOnDC = Get-CimInstance -Class Win32_UserProfile -ComputerName $targetedADdomainRWDCFQDN -ErrorAction STOP | Where-Object { $_.SID -match $targetedADdomainDomainSID } | ForEach-Object { $_.SID }
+				$adminUsrSID = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+
+				Return $sidOfProfilesOfTargetedDomainOnDC, $adminUsrSID
+			}
+			Remove-PSSession $targetedServerSession
+		}
 		$sidCandidatesOnDC = @{}
 
 		# For Each Scoped User Profile Get The Object Class And The Constructed Attribute "tokenGroupsNoGCAcceptable"
@@ -5235,57 +5091,31 @@ Function determineUserAccountForRSoP {
 				$targetObjectToCheckDN = $null
 				$targetObjectToCheck1 = $null
 				$targetObjectToCheck = $null
-				If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-					Try {
-						$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-						$targetObjectToCheck1 = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)"
-						If (-not [string]::IsNullOrEmpty($targetObjectToCheck1)) {
-							$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
-							$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","msDS-PrincipalName","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
-						}
-						$ldapConnection.Dispose()
-					} Catch {
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				Try {
+					$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+					$targetObjectToCheck1 = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)"
+					If (-not [string]::IsNullOrEmpty($targetObjectToCheck1)) {
+						$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
+						$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass", "msDS-PrincipalName", "tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
 					}
-				}
-				If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-					Try {
-						$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-						$targetObjectToCheck1 = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)"
-						If (-not [string]::IsNullOrEmpty($targetObjectToCheck1)) {
-							$targetObjectToCheckDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSid=$sidOfProfile)").distinguishedName
-							$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetObjectToCheckDN -searchFilter "(objectSid=$sidOfProfile)" -searchScope Base -PropertiesToLoad @("objectClass","msDS-PrincipalName","tokenGroupsNoGCAcceptable") -BinaryProps @("tokenGroupsNoGCAcceptable")
-						}
+				} Catch {
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
+				} Finally {
+					If ($null -ne $ldapConnection) {
 						$ldapConnection.Dispose()
-					} Catch {
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Object '$sidOfProfile' To Determine Its ObjectClass Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					}
 				}
 
 				If (-not [string]::IsNullOrEmpty($targetObjectToCheck)) {
 					# From The List With SIDs In Byte Format, Create A List Wth SIDs In String Format
 					$groupSidsByteFormatForAccount = $targetObjectToCheck.tokenGroupsNoGCAcceptable
-					$groupSidsStringFormatForAccount = @()
+					$groupSidsStringFormatForAccount = [System.Collections.Generic.List[string]]::new()
 					$groupSidsByteFormatForAccount | ForEach-Object {
 						$sidByteFormat = $_
-						$sidStringFormat = (New-Object System.Security.Principal.SecurityIdentifier($sidByteFormat,0)).Value
-						$groupSidsStringFormatForAccount += $sidStringFormat
+						$sidStringFormat = (New-Object System.Security.Principal.SecurityIdentifier($sidByteFormat, 0)).Value
+						$groupSidsStringFormatForAccount.Add($sidStringFormat)
 					}
 
 					# If The User Profile Belongs To An Account With Object Class USER And Which Is A Member Of Either Or Both "Administrators" And/Or "Domain Admins" Group, Add It As A Possible Candidate To Choose From
@@ -5293,18 +5123,18 @@ Function determineUserAccountForRSoP {
 						$sidCandidatesOnDC[$sidOfProfile] = $targetObjectToCheck."msDS-PrincipalName"
 					}
 				} Else {
+					# A SID Profile May Exist Of An Account That DOES NOT Exist Anymore In AD
 					# FOR TESTING PURPOSES ONLY! - DO NOT CHANGE!
 					#$sidCandidatesOnDC[$sidOfProfile] = "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP"
 				}
 			}
 			If (($sidCandidatesOnDC.Keys | Measure-Object).Count -gt 0) {
-				If ($sidCandidatesOnDC.Keys -contains ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value) {
-					$sidToChoose = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+				If ($sidCandidatesOnDC.Keys -contains $adminUsrSID) {
+					$sidToChoose = $adminUsrSID
 					#$sidToChoose = $sidCandidatesOnDC.Keys | Get-Random # FOR TESTING ONLY - DO NOT USE!
 				} Else {
 					$sidToChoose = $sidCandidatesOnDC.Keys | Get-Random
 				}
-
 				$accountToChooseForRSoP = $sidCandidatesOnDC[$sidToChoose]
 			} Else {
 				$accountToChooseForRSoP = "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP"
@@ -5318,36 +5148,229 @@ Function determineUserAccountForRSoP {
 
 	Return $accountToChooseForRSoP
 }
-$determineUserAccountForRSoPDef = "function determineUserAccountForRSoP{${function:determineUserAccountForRSoP}}"
 
 ### FUNCTION: Determine Kerberos Policy Settings
 Function determineKerberosPolicySettings {
+	[CmdletBinding()]
 	Param (
 		[Xml]$gpRSoPxml
 	)
 
+	# Get The Computer Results From The RSoP
+	$rsopComputerResults = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults
+	
+	# Define The GPO Hash Table
 	$gpoList = @{}
-	(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object { $gpoList.Add($_.Path.Identifier."#text", $_.Name) }
-	$rsopKerberosPolicy = (((Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension | Where-Object { $_.type -like "*:SecuritySettings" }) | Where-Object { Get-Member -InputObject $_ -Name Account }).Account | Where-Object { $_.Type -eq "Kerberos" }
-	$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
-		SettingName   = "MaxTicketAge";
-		SettingValue  = ($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxTicketAge" }).SettingNumber;
-		SourceGPOGuid = $(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxTicketAge" }).GPO.Identifier.'#text');
-		SourceGPOName = $gpoList[$(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxTicketAge" }).GPO.Identifier.'#text')];
+
+	# Populate The GPO Hash Table With Every Processed GPO
+	(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object {
+		$gpoList.Add($_.Path.Identifier."#text", $_.Name)
 	}
-	$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
-		SettingName   = "MaxClockSkew";
-		SettingValue  = ($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxClockSkew" }).SettingNumber;
-		SourceGPOGuid = $(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxClockSkew" }).GPO.Identifier.'#text');
-		SourceGPOName = $gpoList[$(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxClockSkew" }).GPO.Identifier.'#text')];
+
+	# Check If A Security Extension Exists With Security Settings
+	$extensionForSecuritySettings = $rsopComputerResults.ExtensionData | Where-Object {
+		$(Get-Member -InputObject $_ -Name Extension) -And $_.Extension.type -like "*:SecuritySettings"
+	}
+
+	# If A Security Extension DOES Exist With Security Settings
+	If ($null -ne $extensionForSecuritySettings) {
+		# Check If A Security Extension Account Exists
+		$extensionForSecuritySettingsAccount = $extensionForSecuritySettings.Extension | Where-Object {
+			Get-Member -InputObject $_ -Name Account
+		}
+
+		# If A Security Extension Account DOES Exist
+		If ($null -ne $extensionForSecuritySettingsAccount) {
+			# Check If A Security Extension Account Kerberos Exists
+			$rsopKerberosPolicy = $extensionForSecuritySettingsAccount.Account | Where-Object {
+				$_.Type -eq "Kerberos"
+			}
+
+			# If A Security Extension Account Kerberos DOES Exist
+			If ($null -ne $rsopKerberosPolicy) {
+				$rsopKerberosPolicyExists = $true
+			} Else { # If A Security Extension Account Kerberos DOES NOT Exist
+				$rsopKerberosPolicyExists = $false
+				$rsopKerberosPolicyError = "Missing 'Security Settings - Account - Kerberos' Node In RSoP"
+			}
+		} Else { # If A Security Extension Account DOES NOT Exist
+			$rsopKerberosPolicyExists = $false
+			$rsopKerberosPolicyError = "Missing 'Security Settings - Account' Node In RSoP"
+		}
+	} Else { # If A Security Extension DOES NOT Exist With Security Settings
+		$rsopKerberosPolicyExists = $false
+		$rsopKerberosPolicyError = "Missing 'Security Settings' Node In RSoP"
+	}
+
+	# If A Security Extension Account Kerberos DOES Exist, Get The Values And Use Those
+	If ($rsopKerberosPolicyExists -eq $true) {
+		$kerberosPolicyMaxTgtAgeObject = [PSCustomObject]@{
+			SettingName   = "MaxTicketAge";
+			SettingValue  = ($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxTicketAge" }).SettingNumber;
+			SourceGPOGuid = $(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxTicketAge" }).GPO.Identifier.'#text');
+			SourceGPOName = $gpoList[$(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxTicketAge" }).GPO.Identifier.'#text')];
+		}
+		$kerberosPolicyMaxClockSkewObject = [PSCustomObject]@{
+			SettingName   = "MaxClockSkew";
+			SettingValue  = ($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxClockSkew" }).SettingNumber;
+			SourceGPOGuid = $(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxClockSkew" }).GPO.Identifier.'#text');
+			SourceGPOName = $gpoList[$(($rsopKerberosPolicy | Where-Object { $_.Name -eq "MaxClockSkew" }).GPO.Identifier.'#text')];
+		}
+	} Else { # If A Security Extension Account Kerberos DOES NOT Exist, Assume The Default Values
+		$kerberosPolicyMaxTgtAgeObject = [PSCustomObject]@{
+			SettingName   = "MaxTicketAge"
+			SettingValue  = $script:maxTgtLifetimeHrs
+			SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+			SourceGPOName = "Default Value Assumed (Reason: $rsopKerberosPolicyError)"
+		}
+		$kerberosPolicyMaxClockSkewObject = [PSCustomObject]@{
+			SettingName   = "MaxClockSkew"
+			SettingValue  = $script:maxClockSkewMins
+			SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+			SourceGPOName = "Default Value Assumed (Reason: $rsopKerberosPolicyError)"
+		}
 	}
 
 	Return $kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject
 }
 $determineKerberosPolicySettingsDef = "function determineKerberosPolicySettings{${function:determineKerberosPolicySettings}}"
 
+### FUNCTION: Determine Advanced Auditing Security Settings
+Function determineAdvancedAuditingSecuritySettings {
+	[CmdletBinding()]
+	Param (
+		[Xml]$gpRSoPxml,
+		[string]$requiredSecurityOptionAdvAudit,
+		[string]$requiredAdvAuditSettings
+	)
+
+	### Generic
+
+	# Start With An Undefined GPO Guid For The GPO With Required Security Option
+	$gpoWithRequiredSecurityOptionGpoGuid = $null
+	$gpoWithRequiredAdvancedAuditSettingsGpoGuid = $null
+
+	# Get The Computer Results From The RSoP
+	$rsopComputerResults = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults
+
+	# Define The GPO Hash Table And Populate The NONE Option When No GPO Is Available With The Setting
+	$gpoList = @{}
+	$gpoList["NONE_NOT_DEFINED"]							= "NONE_NOT_DEFINED"
+	$gpoList["NONE_NO_SECURITY_OPTIONS_REGISTRY_KEYS"]		= "NONE_NO_SECURITY_OPTIONS_REGISTRY_KEYS"
+	$gpoList["NONE_NO_SECURITY_OPTIONS"]					= "NONE_NO_SECURITY_OPTIONS"
+	$gpoList["NONE_SUBCATEGORY_NOT_DEFINED"]				= "NONE_SUBCATEGORY_NOT_DEFINED"
+	$gpoList["NONE_NO_AUDIT_SUBCATEGORY_SETTINGS"]			= "NONE_NO_AUDIT_SUBCATEGORY_SETTINGS"
+	$gpoList["NONE_NO_SECURITY_SETTINGS_EXTENSION_IN_RSOP"]	= "NONE_NO_SECURITY_SETTINGS_EXTENSION_IN_RSOP"
+
+	# Populate The GPO Hash Table With Every Processed GPO
+	(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object {
+		$gpoList.Add($_.Path.Identifier."#text", $_.Name)
+	}
+
+	### Security Options
+
+	# Check If A Security Extension Exists With Security Settings
+	$extensionForSecuritySettings = $rsopComputerResults.ExtensionData | Where-Object {
+		$(Get-Member -InputObject $_ -Name Extension) -And $_.Extension.type -like "*:SecuritySettings"
+	}
+
+	# If A Security Extension DOES Exist With Security Settings
+	If ($null -ne $extensionForSecuritySettings) {
+		# Check If A Security Extension SecurityOptions Exists
+		$extensionForSecuritySettingsSecurityOptions = $extensionForSecuritySettings.Extension | Where-Object {
+			Get-Member -InputObject $_ -Name SecurityOptions
+		}
+
+		# If A Security Extension SecurityOptions DOES Exist
+		If ($null -ne $extensionForSecuritySettingsSecurityOptions) {
+			# Check If A Security Extension SecurityOptions Registry Keys Exists
+			$rsopSecurityOptionsRegistry = $extensionForSecuritySettingsSecurityOptions.SecurityOptions | Where-Object {
+				Get-Member -InputObject $_ -Name KeyName
+			}
+
+			# If A Security Extension SecurityOptions Registry Keys DOES Exist
+			If ($null -ne $rsopSecurityOptionsRegistry) {
+				# If A Security Extension SecurityOptions Registry Key DOES Exist With The Advanced Auditing And It Is Set To 1
+				If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptionsRegistry | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) -And $_.SettingNumber -eq $($requiredSecurityOptionAdvAudit.Split("|")[2])})))) {
+					$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptionsRegistry | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
+					$isRequiredSecurityOptionEnabled = $true
+				} ElseIf (-not ([string]::IsNullOrEmpty($($rsopSecurityOptionsRegistry | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) -And $_.SettingNumber -ne $($requiredSecurityOptionAdvAudit.Split("|")[2])})))) {
+					$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptionsRegistry | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
+					$isRequiredSecurityOptionEnabled = $false
+				} Else { # If A Security Extension SecurityOptions Registry Key DOES NOT Exist With The Advanced Auditing
+					$gpoWithRequiredSecurityOptionGpoGuid = "NONE_NOT_DEFINED"
+					$isRequiredSecurityOptionEnabled = $false
+				}
+			} Else { # If A Security Extension SecurityOptions Registry Keys DOES NOT Exist
+				$gpoWithRequiredSecurityOptionGpoGuid = "NONE_NO_SECURITY_OPTIONS_REGISTRY_KEYS"
+				$isRequiredSecurityOptionEnabled = $false
+			}
+		} Else { # If A Security Extension SecurityOptions DOES NOT Exist
+			$gpoWithRequiredSecurityOptionGpoGuid = "NONE_NO_SECURITY_OPTIONS"
+			$isRequiredSecurityOptionEnabled = $false
+		}
+
+		
+		# Check If A Security Extension Exists With Security Settings
+		$extensionForSecuritySettings = $rsopComputerResults.ExtensionData | Where-Object {
+			$(Get-Member -InputObject $_ -Name Extension) -And $_.Extension.type -like "*:SecuritySettings"
+		}
+	}
+
+	### Auditing Settings
+
+	# Check If A Security Extension Exists With Auditing Settings
+	$extensionForAuditingSettings = $rsopComputerResults.ExtensionData | Where-Object {
+		$(Get-Member -InputObject $_ -Name Extension) -And $_.Extension.type -like "*:AuditSettings"
+	}
+
+	# If A Security Extension DOES Exist With Security Settings
+	If ($null -ne $extensionForAuditingSettings) {
+		# Check If A Security Extension AuditSettings Exists
+		$extensionForAuditingSettingsAuditSettings = $extensionForAuditingSettings.Extension | Where-Object {
+			Get-Member -InputObject $_ -Name AuditSetting
+		}
+
+		# If A Security Extension AuditSettings DOES Exist
+		If ($null -ne $extensionForAuditingSettingsAuditSettings) {
+			# Check If A Security Extension AuditSettings SubcategoryName Exists
+			$rsopSecurityOptionsSubcategoryNames = $extensionForAuditingSettingsAuditSettings.AuditSetting | Where-Object {
+				Get-Member -InputObject $_ -Name SubcategoryName
+			}
+
+			# If A Security Extension AuditSettings Specific SubcategoryName DOES Exist
+			If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptionsSubcategoryNames | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) })))) {
+				# If A Security Extension AuditSettings Specific SubcategoryName DOES Exist And The Correct Setting IS Enabled
+				If ($(($rsopSecurityOptionsSubcategoryNames | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).SettingValue -band $($requiredAdvAuditSettings.Split("|")[3])) -eq $($requiredAdvAuditSettings.Split("|")[3])) {
+					$gpoWithRequiredAdvancedAuditSettingsGpoGuid = ($rsopSecurityOptionsSubcategoryNames | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).GPO.Identifier.'#text'
+					$isRequiredAdvancedAuditSettingsEnabled = $true
+				} Else { # If A Security Extension AuditSettings Specific SubcategoryName DOES Exist And The Correct Setting IS NOT Enabled
+					$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE_NOT_DEFINED"
+					$isRequiredAdvancedAuditSettingsEnabled = $false
+				}
+			} Else { # If A Security Extension AuditSettings Specific SubcategoryName DOES NOT Exist
+				$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE_SUBCATEGORY_NOT_DEFINED"
+				$isRequiredAdvancedAuditSettingsEnabled = $false
+			}
+		} Else { # If A Security Extension AuditSettings DOES NOT Exist
+			$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE_NO_AUDIT_SUBCATEGORY_SETTINGS"
+			$isRequiredAdvancedAuditSettingsEnabled = $false
+		}
+	} Else { # If A Security Extension DOES NOT Exist With Security Settings
+		$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE_NO_SECURITY_SETTINGS_EXTENSION_IN_RSOP"
+		$isRequiredAdvancedAuditSettingsEnabled = $false
+
+		$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE_NO_SECURITY_SETTINGS_EXTENSION_IN_RSOP"
+		$isRequiredAdvancedAuditSettingsEnabled = $false
+	}
+
+	Return $gpoList, $gpoWithRequiredSecurityOptionGpoGuid, $isRequiredSecurityOptionEnabled, $gpoWithRequiredAdvancedAuditSettingsGpoGuid, $isRequiredAdvancedAuditSettingsEnabled
+}
+$determineAdvancedAuditingSecuritySettingsDef = "function determineAdvancedAuditingSecuritySettings{${function:$determineAdvancedAuditingSecuritySettings}}"
+
 ### FUNCTION: Create TEST/BOGUS KrbTgt Accounts
 Function createTestKrbTgtADAccount {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
 		[string]$krbTgtInUseByDCFQDN,
@@ -5361,23 +5384,23 @@ Function createTestKrbTgtADAccount {
 	$containerForTestKrbTgtAccount = $null
 	$containerForTestKrbTgtAccount = "CN=Users," + $($script:targetedADdomainDefaultNCDN)
 
-	# Set The SamAccountName For The Test/Bogus KrbTgt Account
+	# Set The SamAccountName For The TEST/BOGUS KrbTgt Account
 	$testKrbTgtObjectSamAccountName = $null
 	$testKrbTgtObjectSamAccountName = $krbTgtSamAccountName
 
-	# Set The Name For The Test/Bogus KrbTgt Account
+	# Set The Name For The TEST/BOGUS KrbTgt Account
 	$testKrbTgtObjectName = $null
 	$testKrbTgtObjectName = $testKrbTgtObjectSamAccountName
 
-	# Set The Description For The Test/Bogus KrbTgt Account
+	# Set The Description For The TEST/BOGUS KrbTgt Account
 	$testKrbTgtObjectDescription = $null
 
-	# Set The Description For The Test/Bogus KrbTgt Account For RWDCs
+	# Set The Description For The TEST/BOGUS KrbTgt Account For RWDCs
 	If ($krbTgtUse -eq "RWDC") {
 		$testKrbTgtObjectDescription = "Test Copy Representing '$($krbTgtSamAccountName.SubString(0,$krbTgtSamAccountName.IndexOf('_TEST')))' - Key Distribution Center Service Account For RWDCs"
 	}
 
-	# Set The Description For The Test/Bogus KrbTgt Account For RODCs
+	# Set The Description For The TEST/BOGUS KrbTgt Account For RODCs
 	If ($krbTgtUse -eq "RODC") {
 		$testKrbTgtObjectDescription = "Test Copy Representing '$($krbTgtSamAccountName.SubString(0,$krbTgtSamAccountName.IndexOf('_TEST')))' - Key Distribution Center Service Account For RODC '$krbTgtInUseByDCFQDN'"
 	}
@@ -5398,258 +5421,116 @@ Function createTestKrbTgtADAccount {
 		writeLog -dataToLog "  --> To Be Used By RODC....................: '$krbTgtInUseByDCFQDN'"
 	}
 
-	# If The Test/Bogus KrbTgt Account Is Used By RWDCs
-	If ($krbTgtUse -eq "RWDC") {
-		$deniedRODCPwdReplGroupRID = "572"
-		$deniedRODCPwdReplGroupObjectSID = $targetedADdomainDomainSID + "-" + $deniedRODCPwdReplGroupRID
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-				$deniedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSID=$deniedRODCPwdReplGroupObjectSID)" -PropertiesToLoad @("name")
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Group Object With 'objectSID=$deniedRODCPwdReplGroupObjectSID'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
+	# If The TEST/BOGUS KrbTgt Account Is Used By RWDCs, Add It To The DENIED RODC Password Replication Group | If The TEST/BOGUS KrbTgt Account Is Used By RODCs, Add It To The ALLOWED RODC Password Replication Group
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		If ($krbTgtUse -eq "RWDC") {
+			$deniedRODCPwdReplGroupRID = "572"
+			$deniedRODCPwdReplGroupObjectSID = $targetedADdomainDomainSID + "-" + $deniedRODCPwdReplGroupRID
+			$deniedRODCPwdReplGroupObject = $null
+			$deniedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSID=$deniedRODCPwdReplGroupObjectSID)" -PropertiesToLoad @("name")
 		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-				$deniedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSID=$deniedRODCPwdReplGroupObjectSID)" -PropertiesToLoad @("name")
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Group Object With 'objectSID=$deniedRODCPwdReplGroupObjectSID' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
+		If ($krbTgtUse -eq "RODC") {
+			$allowedRODCPwdReplGroupRID = "571"
+			$allowedRODCPwdReplGroupObjectSID = $targetedADdomainDomainSID + "-" + $allowedRODCPwdReplGroupRID
+			$allowedRODCPwdReplGroupObject = $null
+			$allowedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSID=$allowedRODCPwdReplGroupObjectSID)" -PropertiesToLoad @("name")
 		}
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		If ($krbTgtUse -eq "RWDC") {
+			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Group Object With 'objectSID=$deniedRODCPwdReplGroupObjectSID'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		}
+		If ($krbTgtUse -eq "RODC") {
+			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Group Object With 'objectSID=$allowedRODCPwdReplGroupObjectSID'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		}
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
+			$ldapConnection.Dispose()
+		}
+	}
+	If ($krbTgtUse -eq "RWDC" -And $deniedRODCPwdReplGroupObject) {
 		$deniedRODCPwdReplGroupObjectDN = $deniedRODCPwdReplGroupObject.distinguishedName
 		$deniedRODCPwdReplGroupObjectName = $deniedRODCPwdReplGroupObject.name
 		writeLog -dataToLog "  --> Membership Of RODC PRP Group..........: '$deniedRODCPwdReplGroupObjectName' ('$deniedRODCPwdReplGroupObjectDN')"
 	}
-
-	# If The Test/Bogus KrbTgt Account Is Used By RODCs
-	If ($krbTgtUse -eq "RODC") {
-		$allowedRODCPwdReplGroupRID = "571"
-		$allowedRODCPwdReplGroupObjectSID = $targetedADdomainDomainSID + "-" + $allowedRODCPwdReplGroupRID
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-				$allowedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSID=$allowedRODCPwdReplGroupObjectSID)" -PropertiesToLoad @("name")
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Group Object With 'objectSID=$allowedRODCPwdReplGroupObjectSID'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-				$allowedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(objectSID=$allowedRODCPwdReplGroupObjectSID)" -PropertiesToLoad @("name")
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For Group Object With 'objectSID=$allowedRODCPwdReplGroupObjectSID' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
+	If ($krbTgtUse -eq "RODC" -And $allowedRODCPwdReplGroupObject) {
 		$allowedRODCPwdReplGroupObjectDN = $allowedRODCPwdReplGroupObject.distinguishedName
 		$allowedRODCPwdReplGroupObjectName = $allowedRODCPwdReplGroupObject.name
 		writeLog -dataToLog "  --> Membership Of RODC PRP Group..........: '$allowedRODCPwdReplGroupObjectName' ('$allowedRODCPwdReplGroupObjectDN')"
 	}
 	writeLog -dataToLog ""
 
-	# Check If The Test/Bogus KrbTgt Account Already Exists In AD
+	# Check If The TEST/BOGUS KrbTgt Account Already Exists In AD
 	$testKrbTgtObject = $null
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$testKrbTgtObjectDN)" -PropertiesToLoad @("description")
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$testKrbTgtObjectDN)" -PropertiesToLoad @("description")
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$testKrbTgtObjectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$testKrbTgtObjectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$testKrbTgtObjectDN)" -PropertiesToLoad @("description")
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$testKrbTgtObjectDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 	If ($testKrbTgtObject) {
 		writeLog -dataToLog "  --> TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] ALREADY EXISTS on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog ""
+
 		# Update The Description For The TEST/BOGUS KrbTgt Account If There Is A Mismatch For Whatever Reason
 		If ($testKrbTgtObject.Description -ne $testKrbTgtObjectDescription) {
-			$testKrbTgtObj = [PSCustomObject]@{distinguishedName = $null; description = $null }
-			$testKrbTgtObj.distinguishedName = $testKrbTgtObjectDN
-			$testKrbTgtObj.description = $testKrbTgtObjectDescription
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-					Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $testKrbTgtObj
+			$testKrbTgtObj = [PSCustomObject]@{
+				distinguishedName	= $testKrbTgtObjectDN
+				description       = $testKrbTgtObjectDescription
+			}
+			Try {
+				$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+				Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $testKrbTgtObj
+				writeLog -dataToLog "  --> Updated Description For Existing TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] on RWDC [$targetedADdomainRWDCFQDN] Due To Mismatch!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+			} Catch {
+				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog "Error Updating Description For User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeExceptionLogError -exceptionRecord $($_)
+			} Finally {
+				If ($null -ne $ldapConnection) {
 					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Updating User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				}
 			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-					Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $testKrbTgtObj
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Updating User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			}
-			writeLog -dataToLog "  --> Updated Description For Existing TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] on RWDC [$targetedADdomainRWDCFQDN] Due To Mismatch!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 
 		# Check The Membership Of The TEST/BOGUS KrbTgt Accounts And Update As Needed
 		$updateMembership = $false
-		If ($krbTgtUse -eq "RWDC") {
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-					If (!(Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$testKrbTgtObjectSamAccountName)(memberOf:1.2.840.113556.1.4.1941:=$deniedRODCPwdReplGroupObjectDN))")) {
-						$updateMembership = $true
-					}
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Checking Membership On '$targetedADdomainRWDCFQDN' Of Object '$testKrbTgtObjectSamAccountName' For Object '$deniedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		Try {
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+			If ($krbTgtUse -eq "RWDC") {
+				If (!(Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$testKrbTgtObjectSamAccountName)(memberOf:1.2.840.113556.1.4.1941:=$deniedRODCPwdReplGroupObjectDN))")) {
+					$updateMembership = $true
 				}
 			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-					If (!(Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$testKrbTgtObjectSamAccountName)(memberOf:1.2.840.113556.1.4.1941:=$deniedRODCPwdReplGroupObjectDN))")) {
-						$updateMembership = $true
-					}
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Checking Membership On '$targetedADdomainRWDCFQDN' Of Object '$testKrbTgtObjectSamAccountName' For Object '$deniedRODCPwdReplGroupObjectName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			If ($krbTgtUse -eq "RODC") {
+				If (!(Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$testKrbTgtObjectSamAccountName)(memberOf:1.2.840.113556.1.4.1941:=$allowedRODCPwdReplGroupObjectDN))")) {
+					$updateMembership = $true
 				}
 			}
-		}
-		If ($krbTgtUse -eq "RODC") {
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-					If (!(Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$testKrbTgtObjectSamAccountName)(memberOf:1.2.840.113556.1.4.1941:=$allowedRODCPwdReplGroupObjectDN))")) {
-						$updateMembership = $true
-					}
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Checking Membership On '$targetedADdomainRWDCFQDN' Of Object '$testKrbTgtObjectSamAccountName' For Object '$allowedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
+		} Catch {
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			If ($krbTgtUse -eq "RWDC") {
+				writeLog -dataToLog "Error Checking Membership On '$targetedADdomainRWDCFQDN' Of Object '$testKrbTgtObjectSamAccountName' For Object '$deniedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-					If (!(Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$testKrbTgtObjectSamAccountName)(memberOf:1.2.840.113556.1.4.1941:=$allowedRODCPwdReplGroupObjectDN))")) {
-						$updateMembership = $true
-					}
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Checking Membership On '$targetedADdomainRWDCFQDN' Of Object '$testKrbTgtObjectSamAccountName' For Object '$allowedRODCPwdReplGroupObjectName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
+			If ($krbTgtUse -eq "RODC") {
+				writeLog -dataToLog "Error Checking Membership On '$targetedADdomainRWDCFQDN' Of Object '$testKrbTgtObjectSamAccountName' For Object '$allowedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			}
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
+				$ldapConnection.Dispose()
 			}
 		}
 	} Else {
-		# If The Test/Bogus KrbTgt Account Does Not Exist Yet In AD
+		# If The TEST/BOGUS KrbTgt Account Does Not Exist Yet In AD
 		# Specify The Number Of Characters The Generate Password Should Contain
 		$passwdNrChars = 64
 
@@ -5657,201 +5538,96 @@ Function createTestKrbTgtADAccount {
 		$krbTgtPassword = $null
 		$krbTgtPassword = (generateNewComplexPassword -passwdNrChars $passwdNrChars).ToString()
 
-		# Try To Create The Test/Bogus KrbTgt Account In The AD Domain And If Not Successful Throw Error
+		# Try To Create The TEST/BOGUS KrbTgt Account In The AD Domain And If Not Successful Throw Error
+		$testKrbTgtObj = [PSCustomObject]@{
+			distinguishedName  = $testKrbTgtObjectDN
+			objectClass        = "user"
+			sAMAccountName     = $testKrbTgtObjectSamAccountName
+			displayName        = $testKrbTgtObjectName
+			userAccountControl	= 514
+			unicodePwd         = $krbTgtPassword
+			description        = $testKrbTgtObjectDescription
+		}
 		Try {
-			$testKrbTgtObj = [PSCustomObject]@{distinguishedName = $null; objectClass = $null; sAMAccountName = $null; displayName = $null; userAccountControl = 0; unicodePwd = $null; description = $null }
-			$testKrbTgtObj.distinguishedName = $testKrbTgtObjectDN
-			$testKrbTgtObj.objectClass = "user"
-			$testKrbTgtObj.sAMAccountName = $testKrbTgtObjectSamAccountName
-			$testKrbTgtObj.displayName = $testKrbTgtObjectName
-			$testKrbTgtObj.userAccountControl = 514
-			$testKrbTgtObj.unicodePwd = $krbTgtPassword
-			$testKrbTgtObj.description = $testKrbTgtObjectDescription
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-					Add-LdapObject -LdapConnection $ldapConnection -Object $testKrbTgtObj -BinaryProps unicodePwd
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Creating User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-					Add-LdapObject -LdapConnection $ldapConnection -Object $testKrbTgtObj -BinaryProps unicodePwd
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Creating User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			}
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+			Add-LdapObject -LdapConnection $ldapConnection -Object $testKrbTgtObj -BinaryProps unicodePwd
 		} Catch {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "  --> TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] FAILED TO BE CREATED on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-
-		# Check The The Test/Bogus KrbTgt Account Exists And Was created In AD
-		$testKrbTgtObject = $null
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-				$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=user)(name=$testKrbTgtObjectName))"
+			writeLog -dataToLog "Error Creating User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
 				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'name=$testKrbTgtObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			}
 		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-				$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=user)(name=$testKrbTgtObjectName))"
+
+		# Check The The TEST/BOGUS KrbTgt Account Exists And Was created In AD
+		$testKrbTgtObject = $null
+		Try {
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+			$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=user)(name=$testKrbTgtObjectName))" -PropertiesToLoad "1.1"
+		} Catch {
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'name=$testKrbTgtObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
 				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'name=$testKrbTgtObjectName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			}
 		}
 		If ($testKrbTgtObject) {
 			$testKrbTgtObjectDN = $null
 			$testKrbTgtObjectDN = $testKrbTgtObject.DistinguishedName
-			writeLog -dataToLog "  --> New TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] CREATED on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "  --> New TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] ('$testKrbTgtObjectSamAccountName') CREATED on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 			$updateMembership = $true
 		} Else {
+			writeLog -dataToLog "  --> New TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] ('$testKrbTgtObjectSamAccountName') FAILED TO BE CREATED on RWDC [$targetedADdomainRWDCFQDN]!..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			$updateMembership = $false
 		}
 	}
 
 	If ($testKrbTgtObject -And $updateMembership -eq $true) {
-		# If The Test/Bogus KrbTgt Account Already Exists In AD
-		# If The Test/Bogus KrbTgt Account Is Not Yet A Member Of The Specified AD Group, Then Add It As A Member
+		# If The TEST/BOGUS KrbTgt Account Already Exists In AD
+		# AND
+		# If The TEST/BOGUS KrbTgt Account Is Not Yet A Member Of The Specified AD Group, Then Add It As A Member
+		# If The TEST/BOGUS KrbTgt Account Is Used By RWDCs | If The TEST/BOGUS KrbTgt Account Is Used By RODCs
+		Try {
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+			If ($krbTgtUse -eq "RWDC") {
+				$deniedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=group)(sAMAccountName=$deniedRODCPwdReplGroupObjectName))" -AdditionalProperties @('member')
+				$deniedRODCPwdReplGroupObject.member = $testKrbTgtObjectDN
+				Edit-LdapObject -LdapConnection $ldapConnection -Object $deniedRODCPwdReplGroupObject -Mode Add
+			}
+			If ($krbTgtUse -eq "RODC") {
+				$allowedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=group)(sAMAccountName=$allowedRODCPwdReplGroupObjectName))" -AdditionalProperties @('member')
+				$allowedRODCPwdReplGroupObject.member = $testKrbTgtObjectDN
+				Edit-LdapObject -LdapConnection $ldapConnection -Object $allowedRODCPwdReplGroupObject -Mode Add
+			}
+		} Catch {
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			If ($krbTgtUse -eq "RWDC") {
+				writeLog -dataToLog "Error Adding Members On '$targetedADdomainRWDCFQDN' For Group Object With 'name=$deniedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			}
+			If ($krbTgtUse -eq "RODC") {
+				writeLog -dataToLog "Error Adding Members On '$targetedADdomainRWDCFQDN' For Group Object With 'name=$allowedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			}
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
+				$ldapConnection.Dispose()
+			}
+		}
 		If ($krbTgtUse -eq "RWDC") {
-			# If The Test/Bogus KrbTgt Account Is Used By RWDCs
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-					$deniedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=group)(sAMAccountName=$deniedRODCPwdReplGroupObjectName))" -AdditionalProperties @('member')
-					$deniedRODCPwdReplGroupObject.member = $testKrbTgtObjectDN
-					Edit-LdapObject -LdapConnection $ldapConnection -Object $deniedRODCPwdReplGroupObject -Mode Add
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Adding Members On '$targetedADdomainRWDCFQDN' For Group Object With 'name=$deniedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-					$deniedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=group)(sAMAccountName=$deniedRODCPwdReplGroupObjectName))" -AdditionalProperties @('member')
-					$deniedRODCPwdReplGroupObject.member = $testKrbTgtObjectDN
-					Edit-LdapObject -LdapConnection $ldapConnection -Object $deniedRODCPwdReplGroupObject -Mode Add
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Retrieving Members On '$targetedADdomainRWDCFQDN' For Group Object With 'name=$deniedRODCPwdReplGroupObjectName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			}
 			writeLog -dataToLog "  --> TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] ADDED AS MEMBER OF [$deniedRODCPwdReplGroupObjectName]!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 		}
-
 		If ($krbTgtUse -eq "RODC") {
-			# If The Test/Bogus KrbTgt Account Is Used By RODCs
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-					$allowedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=group)(sAMAccountName=$allowedRODCPwdReplGroupObjectName))" -AdditionalProperties @('member')
-					$allowedRODCPwdReplGroupObject.member = $testKrbTgtObjectDN
-					Edit-LdapObject -LdapConnection $ldapConnection -Object $allowedRODCPwdReplGroupObject -Mode Add
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Adding Members On '$targetedADdomainRWDCFQDN' For Group Object With 'name=$allowedRODCPwdReplGroupObjectName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				Try {
-					$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-					$allowedRODCPwdReplGroupObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectClass=group)(sAMAccountName=$allowedRODCPwdReplGroupObjectName))" -AdditionalProperties @('member')
-					$allowedRODCPwdReplGroupObject.member = $testKrbTgtObjectDN
-					Edit-LdapObject -LdapConnection $ldapConnection -Object $allowedRODCPwdReplGroupObject -Mode Add
-					$ldapConnection.Dispose()
-				} Catch {
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error Retrieving Members On '$targetedADdomainRWDCFQDN' For Group Object With 'name=$allowedRODCPwdReplGroupObjectName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-			}
 			writeLog -dataToLog "  --> TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] ADDED AS MEMBER OF [$allowedRODCPwdReplGroupObjectName]!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 		}
+		writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 	} ElseIf ($testKrbTgtObject -And $updateMembership -eq $false) {
-		# If The Test/Bogus KrbTgt Account Is Already A Member Of The Specified AD Group
+		# If The TEST/BOGUS KrbTgt Account Is Already A Member Of The Specified AD Group
 		If ($krbTgtUse -eq "RWDC") {
 			writeLog -dataToLog "  --> TEST/BOGUS KrbTgt Account [$testKrbTgtObjectDN] ALREADY MEMBER OF [$deniedRODCPwdReplGroupObjectName]!..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 		}
@@ -5864,6 +5640,7 @@ Function createTestKrbTgtADAccount {
 
 ### FUNCTION: Delete TEST/BOGUS KrbTgt Accounts
 Function deleteTestKrbTgtADAccount {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
 		[string]$krbTgtSamAccountName,
@@ -5871,41 +5648,18 @@ Function deleteTestKrbTgtADAccount {
 		[PSCredential]$adminCrds
 	)
 
-	# Check If The Test/Bogus KrbTgt Account Exists In AD
+	# Check If The TEST/BOGUS KrbTgt Account Exists In AD
 	$testKrbTgtObject = $null
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))"
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad "1.1"
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))"
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 	If ($testKrbTgtObject) {
@@ -5915,73 +5669,29 @@ Function deleteTestKrbTgtADAccount {
 		writeLog -dataToLog "  --> RWDC To Delete Object On..............: '$targetedADdomainRWDCFQDN'"
 		writeLog -dataToLog "  --> TEST/BOGUS KrbTgt Account DN..........: '$testKrbTgtObjectDN'"
 		writeLog -dataToLog ""
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-				Remove-LdapObject -LdapConnection $ldapConnection -Object $testKrbTgtObjectDN
+		Try {
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+			Remove-LdapObject -LdapConnection $ldapConnection -Object $testKrbTgtObjectDN
+		} Catch {
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "Error Deleting User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
 				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Deleting User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-				Remove-LdapObject -LdapConnection $ldapConnection -Object $testKrbTgtObjectDN
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Deleting User On '$targetedADdomainRWDCFQDN' For Object '$testKrbTgtObjectDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			}
 		}
 		$testKrbTgtObject = $null
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-				$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$testKrbTgtObjectDN)"
+		Try {
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+			$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$testKrbTgtObjectDN)" -PropertiesToLoad "1.1"
+		} Catch {
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$testKrbTgtObjectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
 				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$testKrbTgtObjectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-				$testKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(distinguishedName=$testKrbTgtObjectDN)"
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For User Object With 'distinguishedName=$testKrbTgtObjectDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			}
 		}
 		If (!$testKrbTgtObject) {
@@ -6001,6 +5711,7 @@ Function deleteTestKrbTgtADAccount {
 
 ### FUNCTION: Start Countdown/Waiting Function With Message
 Function startCountdown {
+	[CmdletBinding()]
 	Param (
 		[Int32]$seconds,
 		[string]$message = "Pausing For $seconds Seconds..."
@@ -6015,6 +5726,7 @@ Function startCountdown {
 
 ### FUNCTION: Send E-mail With Information
 Function sendMailMessage {
+	[CmdletBinding()]
 	Param (
 		[XML]$configResetKrbTgtPasswordSettings,
 		[string[]]$mailAttachments,
@@ -6026,19 +5738,41 @@ Function sendMailMessage {
 	$smtpPort = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpPort
 	$useSSL = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.useSSL
 	$smtpCredsType = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsType
-	$mailSubject = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailSubject
 	$mailPriority = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailPriority
+
+	$mailSubject = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailSubject
+	If ($null -ne $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailReplacementOptionsSUBJECT) {
+		$mailReplacementOptionsSUBJECT = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailReplacementOptionsSUBJECT.ChildNodes
+		ForEach ($subjectReplacementOption in $mailReplacementOptionsSUBJECT) {
+			$placeholderInSubject = $subjectReplacementOption.placeHolder
+			$rawReplaceWithInSubject = $subjectReplacementOption.replaceWith
+			$expandedValueSubject = $ExecutionContext.InvokeCommand.ExpandString($rawReplaceWithInSubject)
+			$mailSubject = $mailSubject.Replace($placeholderInSubject, $expandedValueSubject)
+		}
+	}
+
 	$mailBody = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailBody
-	$mailBody = $mailBody.Replace("REPLACE_CONTEXT", $context)
-	$mailBody = $mailBody.Replace("REPLACE_AD_FOREST_FQDN", $($script:targetedADforestFQDN))
-	$mailBody = $mailBody.Replace("REPLACE_AD_DOMAIN_FQDN", $($script:targetedADdomainFQDN))
-	$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_PROCESSED_TOTAL", $($script:numAccntsProcessedTOTAL))
-	$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_CANDIDATE_YES", $($script:numAccntsResetCandidateYES))
-	$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_CANDIDATE_NO", $($script:numAccntsResetCandidateNO))
-	$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_SUCCESS", $($script:numAccntsResetSUCCESS))
-	$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_FAIL", $($script:numAccntsResetFAIL))
-	$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_SKIP", $($script:numAccntsResetSKIP))
-	$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_ANOMALY", $($script:numAccntsResetANOMALY))
+	If ($null -eq $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailReplacementOptionsBODY) {
+		$mailBody = $mailBody.Replace("REPLACE_CONTEXT", $context)
+		$mailBody = $mailBody.Replace("REPLACE_AD_FOREST_FQDN", $($script:targetedADforestFQDN))
+		$mailBody = $mailBody.Replace("REPLACE_AD_DOMAIN_FQDN", $($script:targetedADdomainFQDN))
+		$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_PROCESSED_TOTAL", $($script:numAccntsProcessedTOTAL))
+		$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_CANDIDATE_YES", $($script:numAccntsResetCandidateYES))
+		$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_CANDIDATE_NO", $($script:numAccntsResetCandidateNO))
+		$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_SUCCESS", $($script:numAccntsResetSUCCESS))
+		$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_FAIL", $($script:numAccntsResetFAIL))
+		$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_SKIP", $($script:numAccntsResetSKIP))
+		$mailBody = $mailBody.Replace("REPLACE_NUM_KRBTGT_ACCNTS_RESET_ANOMALY", $($script:numAccntsResetANOMALY))
+	} Else {
+		$mailReplacementOptionsBODY = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailReplacementOptionsBODY.ChildNodes
+		ForEach ($bodyReplacementOption in $mailReplacementOptionsBODY) {
+			$placeholderInBody = $bodyReplacementOption.placeHolder
+			$rawReplaceWithInBody = $bodyReplacementOption.replaceWith
+			$expandedValueBody = $ExecutionContext.InvokeCommand.ExpandString($rawReplaceWithInBody)
+			$mailBody = $mailBody.Replace($placeholderInBody, $expandedValueBody)
+		}
+	}
+
 	$mailFromSender = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailFromSender
 	$mailToRecipients = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailToRecipients.mailToRecipient
 	$mailCcRecipients = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.mailCcRecipients.mailCcRecipient
@@ -6073,7 +5807,7 @@ Function sendMailMessage {
 			$subjectName = $configResetKrbTgtPasswordSettings.resetKrbTgtPassword.smtpCredsPassword
 			$authNcertificate = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq "CN=$subjectName" }
 			If ([string]::IsNullOrEmpty($authNcertificate)) {
-				Write-Error "Certificate 'CN=$subjectName' DOES NOT Exist!"
+				#Write-Error "Certificate 'CN=$subjectName' DOES NOT Exist!"
 				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "Certificate 'CN=$subjectName' DOES NOT Exist!" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6128,7 +5862,7 @@ Function sendMailMessage {
 			If ($authNcertificate.HasPrivateKey -eq $true) {
 				$certPrivateKey = ([System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($authNcertificate))
 			} Else {
-				Write-Error "Certificate 'CN=$subjectName' DOES NOT Have A Private Key!"
+				#Write-Error "Certificate 'CN=$subjectName' DOES NOT Have A Private Key!"
 				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "Certificate 'CN=$subjectName' DOES NOT Have A Private Key!" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
@@ -6182,13 +5916,7 @@ Function sendMailMessage {
 		} Catch {
 			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "Error Requesting Tokens From Entra ID To Send Mail Through Exchange Online..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			writeExceptionLogError -exceptionRecord $($_)
 			$sendMailContinue = $false
 		}
 
@@ -6216,30 +5944,30 @@ Function sendMailMessage {
 				}
 			)
 			If (($mailToRecipients | Measure-Object).Count -gt 0) {
-				$requestBody.message | Add-Member -MemberType NoteProperty -Name toRecipients -Value @()
+				$requestBody.message.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("toRecipients", [System.Collections.Generic.List[object]]::new()))
 				$mailToRecipients | ForEach-Object {
-					$requestBody.message.toRecipients += $([PSCustomObject]@{emailAddress = [PSCustomObject]@{name = $_; address = $_ } })
+					$requestBody.message.toRecipients.Add($([PSCustomObject]@{emailAddress = [PSCustomObject]@{name = $_; address = $_ } }))
 				}
 			}
 			If (($mailCcRecipients | Measure-Object).Count -gt 0 -And -not [string]::IsNullOrEmpty($mailCcRecipients)) {
-				$requestBody.message | Add-Member -MemberType NoteProperty -Name ccRecipients -Value @()
+				$requestBody.message.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("ccRecipients", [System.Collections.Generic.List[object]]::new()))
 				$mailCcRecipients | ForEach-Object {
-					$requestBody.message.ccRecipients += $([PSCustomObject]@{emailAddress = [PSCustomObject]@{name = $_; address = $_ } })
+					$requestBody.message.ccRecipients.Add($([PSCustomObject]@{emailAddress = [PSCustomObject]@{name = $_; address = $_ } }))
 				}
 			}
 			If (($mailAttachments | Measure-Object).Count -gt 0) {
-				$requestBody.message | Add-Member -MemberType NoteProperty -Name attachments -Value @()
+				$requestBody.message.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("attachments", [System.Collections.Generic.List[object]]::new()))
 				$mailAttachments | ForEach-Object {
 					If ($script:poshVersion -lt [version]"7.0") {
-						$requestBody.message.attachments += $([PSCustomObject]@{"@odata.type" = "#microsoft.graph.fileAttachment"; name = $(Split-Path $_ -leaf); contentType = "text/plain"; contentBytes = $([System.Convert]::ToBase64String($(Get-Content -Path $_ -Encoding Byte))) })
+						$requestBody.message.attachments.Add($([PSCustomObject]@{"@odata.type" = "#microsoft.graph.fileAttachment"; name = $(Split-Path $_ -leaf); contentType = "text/plain"; contentBytes = $([System.Convert]::ToBase64String($(Get-Content -Path $_ -Encoding Byte))) }))
 					} Else {
-						$requestBody.message.attachments += $([PSCustomObject]@{"@odata.type" = "#microsoft.graph.fileAttachment"; name = $(Split-Path $_ -leaf); contentType = "text/plain"; contentBytes = $([System.Convert]::ToBase64String($(Get-Content -Path $_ -AsByteStream))) })
+						$requestBody.message.attachments.Add($([PSCustomObject]@{"@odata.type" = "#microsoft.graph.fileAttachment"; name = $(Split-Path $_ -leaf); contentType = "text/plain"; contentBytes = $([System.Convert]::ToBase64String($(Get-Content -Path $_ -AsByteStream))) }))
 					}
 				}
 			}
 
 			Try {
-				Invoke-RestMethod -Headers $requestHeader -Uri $sendMailEndpointURL -Method POST -Body $($requestBody | ConvertTo-Json -Depth 99) -ContentType "application/json" -ErrorAction Stop
+				Invoke-RestMethod -Headers $requestHeader -Uri $sendMailEndpointURL -Method POST -Body $($requestBody | ConvertTo-Json -Depth 99) -ContentType "application/json" -ErrorAction STOP
 			} Catch {
 				Write-Host ""
 				Write-Host "Error Sending Mail Through Exchange Online..." -ForeGroundColor Red
@@ -6313,7 +6041,8 @@ Function sendMailMessage {
 }
 
 ### FUNCTION: Send Mail With Zip File As Attachment
-Function sendMailWithAttachmentAndDisplayOutput  {
+Function sendMailWithAttachmentAndDisplayOutput {
+	[CmdletBinding()]
 	Param (
 		[string[]]$mailToRecipients,
 		[string[]]$mailCcRecipients,
@@ -6356,13 +6085,7 @@ Function sendMailWithAttachmentAndDisplayOutput  {
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Failed To Delete The File '$zipFilePath'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "    REMARK: Although it failed now, it will eventually be deleted during regular cleaning each time the script executes..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
 	}
 }
 
@@ -6379,6 +6102,7 @@ Function getServerNames {
 
 ### FUNCTION: BuildAttribute Schema Mapping Tables
 Function buildAttributeSchemaMappingTables {
+	[CmdletBinding()]
 	Param (
 		[string]$targetedADdomainRWDCFQDN,
 		[bool]$localADforest,
@@ -6392,46 +6116,53 @@ Function buildAttributeSchemaMappingTables {
 	$script:mappingTable_SCHEMA_schemaIDGUID_lDAPDisplayNameHT["00000000-0000-0000-0000-000000000000"] = "All"
 
 	# Retrieve The Schema lDAPDisplayName And schemaIDGUID Of Each Attribute In The AD Schema
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos
-			Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSchemaNCDN) -searchFilter "(schemaIDGUID=*)" -PropertiesToLoad @("lDAPDisplayName", "schemaIDGUID") -BinaryProps:@("schemaIDGUID") | ForEach-Object {
-				$script:mappingTable_SCHEMA_lDAPDisplayName_schemaIDGUIDHT[$($_.lDAPDisplayName)] = $(([GUID]$_.schemaIDGUID).Guid)
-				$script:mappingTable_SCHEMA_schemaIDGUID_lDAPDisplayNameHT[$(([GUID]$_.schemaIDGUID).Guid)] = $($_.lDAPDisplayName)
-			}
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+		Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSchemaNCDN) -searchFilter "(schemaIDGUID=*)" -PropertiesToLoad @("lDAPDisplayName", "schemaIDGUID") -BinaryProps:@("schemaIDGUID") | ForEach-Object {
+			$script:mappingTable_SCHEMA_lDAPDisplayName_schemaIDGUIDHT[$($_.lDAPDisplayName)] = $(([GUID]$_.schemaIDGUID).Guid)
+			$script:mappingTable_SCHEMA_schemaIDGUID_lDAPDisplayNameHT[$(([GUID]$_.schemaIDGUID).Guid)] = $($_.lDAPDisplayName)
+		}
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For attributeSchema Objects..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For attributeSchema Objects..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-			Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSchemaNCDN) -searchFilter "(schemaIDGUID=*)" -PropertiesToLoad @("lDAPDisplayName", "schemaIDGUID") -BinaryProps:@("schemaIDGUID") | ForEach-Object {
-				$script:mappingTable_SCHEMA_lDAPDisplayName_schemaIDGUIDHT[$($_.lDAPDisplayName)] = $(([GUID]$_.schemaIDGUID).Guid)
-				$script:mappingTable_SCHEMA_schemaIDGUID_lDAPDisplayNameHT[$(([GUID]$_.schemaIDGUID).Guid)] = $($_.lDAPDisplayName)
-			}
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$targetedADdomainRWDCFQDN' For attributeSchema Objects Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-	}
+}
+
+### FUNCTION: Write Exception Log ERRORS
+Function writeExceptionLogError {
+	[CmdletBinding()]
+	Param (
+		[System.Management.Automation.ErrorRecord]$exceptionRecord
+	)
+
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "Exception Type......: $($exceptionRecord.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "Exception Message...: $($exceptionRecord.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "Error On Script Line: $($exceptionRecord.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+}
+
+### FUNCTION: Write Exception Log WARNINGS
+Function writeExceptionLogWarning {
+	[CmdletBinding()]
+	Param (
+		[System.Management.Automation.ErrorRecord]$exceptionRecord
+	)
+
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "Exception Type......: $($exceptionRecord.Exception.GetType().FullName)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "Exception Message...: $($exceptionRecord.Exception.Message)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "Error On Script Line: $($exceptionRecord.InvocationInfo.ScriptLineNumber)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 }
 
 ###
@@ -6452,7 +6183,7 @@ $poshProcess = Get-Process | Where-Object { $_.MainWindowTitle -eq $windowTitle 
 $poshProcessName = $poshProcess.ProcessName
 $poshProcessId = $poshProcess.Id
 If ($poshProcessName -eq "WindowsTerminal") {
-	Get-Process -Id $poshProcessId | Set-Window -X 1 -Y 25 -Width 2000 -Height 800 # -Passthru
+	Get-Process -Id $poshProcessId | Set-Window -X 0 -Y 25 -Width 2000 -Height 800 # -Passthru
 } ElseIf ($poshProcessName -like "*powershell_ise*") {
 	Write-Host ""
 	Write-Host "The Script Is Being Executed From A PowerShell_ISE Command Prompt Window, Which IS NOT Supported!..." -ForeGroundColor Red
@@ -6861,7 +6592,7 @@ If (Test-Path $($script:scriptXMLConfigFilePath)) {
 ###
 # Loading Any Applicable/Required Libraries
 ###
-Add-Type -AssemblyName System.DirectoryServices.Protocols -ErrorAction Stop
+Add-Type -AssemblyName System.DirectoryServices.Protocols -ErrorAction STOP
 
 ###
 # Execute Any Additional Actions Required For The Script To Run Successfully
@@ -7551,7 +7282,6 @@ If (($modeOfOperationNr -ne 1 -And $modeOfOperationNr -ne 2 -And $modeOfOperatio
 	writeLog -dataToLog "  --> Chosen mode: Mode 0 - Exit Script..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog ""
 
-	#BREAK
 	EXIT
 }
 
@@ -7656,8 +7386,7 @@ Try {
 		writeLog -dataToLog ""
 		writeLog -dataToLog "Checking Reachability of the specified $adForestLocation AD forest '$($script:targetedADforestFQDN)' through RootDse..."
 		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADforestFQDN) -EncryptionType Kerberos
-		Get-RootDSE -LdapConnection $ldapConnection -ErrorAction Stop > $null
-		$ldapConnection.Dispose()
+		Get-RootDSE -LdapConnection $ldapConnection -ErrorAction STOP > $null
 		$adForestValidity = $true
 	} Catch [System.Security.Authentication.AuthenticationException] {
 		# $Error[0].Exception.GetType().FullName
@@ -7667,6 +7396,10 @@ Try {
 		$adForestValidity = $false
 	} Catch {
 		$adForestValidity = $false
+	} Finally {
+		If ($null -ne $ldapConnection) {
+			$ldapConnection.Dispose()
+		}
 	}
 }
 
@@ -7690,11 +7423,10 @@ If ($adForestValidity -eq $true) {
 	# Mail The Log File With The Results
 	If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
 		$context = "SCRIPT ABORT - ERROR: The specified $adForestLocation AD forest '$($script:targetedADforestFQDN)' IS NOT resolvable through DNS and IS NOT reachable through RootDse! (Script Version: $($script:version))"
-		
+
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
 
-	#BREAK
 	EXIT
 }
 
@@ -7722,7 +7454,7 @@ If ($adForestAccessibility -eq $true) {
 
 	$adminCrds = $null
 } Else {
-	If ($PSBoundParameters.keys -notcontains "modeOfOperation" -And $PSBoundParameters.keys -notcontains "targetedADforestFQDN" -And $PSBoundParameters.keys -notcontains "targetedADdomainFQDN" -And $PSBoundParameters.keys -notcontains "targetKrbTgtAccountScope") {
+	If ($PSBoundParameters.keys -notcontains "targetKrbTgtAccountScope") {
 		# If The AD Forest Is NOT Accessible, Ask For Credentials
 		writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "The specified AD forest '$($script:targetedADforestFQDN)' IS NOT accessible!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
@@ -7740,6 +7472,7 @@ If ($adForestAccessibility -eq $true) {
 		# Test To See If The AD Forest Is Accessible
 		Try {
 			# Retrieve Information About The AD Forest
+			# The 'DirectoryContext' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 			$adForestContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Forest", $($script:targetedADforestFQDN), $($adminCrds.UserName), $($adminCrds.GetNetworkCredential().Password))
 			$thisADForest = [System.DirectoryServices.ActiveDirectory.Forest]::GetForest($adForestContext)
 
@@ -7773,7 +7506,6 @@ If ($adForestAccessibility -eq $true) {
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
 
-			#BREAK
 			EXIT
 		}
 	} Else {
@@ -7794,7 +7526,6 @@ If ($adForestAccessibility -eq $true) {
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
-		#BREAK
 		EXIT
 	}
 }
@@ -7901,7 +7632,7 @@ writeLog -dataToLog "SELECT THE TARGET AD DOMAIN..." -lineType "HEADER" -logFile
 writeLog -dataToLog ""
 
 # Retrieve All The AD Domains In The AD Forest And Sort These In Some Way
-$sortedListOfADDomainFQDNsInADForest = [System.Collections.Generic.List[Object]]::New()
+$sortedListOfADDomainFQDNsInADForest = [System.Collections.Generic.List[string]]::New()
 ($arrayOfADDomainFQDNsInADForest | Where-Object { $_ -like "*$($script:targetedADforestFQDN)" } | ForEach-Object { ([regex]::Matches($_, '.', 'RightToLeft') | ForEach-Object { $_.value }) -join '' }) | Sort-Object | ForEach-Object { $sortedListOfADDomainFQDNsInADForest.Add($(([regex]::Matches($_, '.', 'RightToLeft') | ForEach-Object { $_.value }) -join '')) }
 (@($arrayOfADDomainFQDNsInADForest | Where-Object { $_ -notin $sortedListOfADDomainFQDNsInADForest }) | ForEach-Object { ([regex]::Matches($_, '.', 'RightToLeft') | ForEach-Object { $_.value }) -join '' }) | Sort-Object | ForEach-Object { $sortedListOfADDomainFQDNsInADForest.Add($(([regex]::Matches($_, '.', 'RightToLeft') | ForEach-Object { $_.value }) -join '')) }
 
@@ -7937,6 +7668,7 @@ $sortedListOfADDomainFQDNsInADForest | ForEach-Object {
 			$adDomainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $domainFQDN)
 		}
 		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+			# The 'DirectoryContext' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 			$adDomainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $domainFQDN, $($adminCrds.UserName), $($adminCrds.GetNetworkCredential().Password))
 		}
 		$domainObj = [System.DirectoryServices.ActiveDirectory.Domain]::GetDomain($adDomainContext)
@@ -8025,7 +7757,6 @@ If ($adDomainValidity -eq $true) {
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
 
-	#BREAK
 	EXIT
 }
 
@@ -8079,7 +7810,6 @@ If ($modeOfOperationNr -gt 1) {
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
 
-			#BREAK
 			EXIT
 		} Else {
 			If ($skipDAMembershipCheck -eq $false) {
@@ -8107,11 +7837,10 @@ If ($modeOfOperationNr -gt 1) {
 						# Mail The Log File With The Results
 						If ($sendMailWithLogFile -And $sendMailEnabled.ToUpper() -eq "TRUE") {
 							$context = "SCRIPT ABORT - ERROR: The user account '$adRunningUserAccount' IS NOT running with Domain/Enterprise Administrator equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)'! (Script Version: $($script:version))"
-							
+
 							sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 						}
 
-						#BREAK
 						EXIT
 					} Else {
 						# The User Account Running This Script Has Been Validated To Be A Member Of The Enterprise Admins Group Of The AD Forest
@@ -8145,12 +7874,11 @@ If ($modeOfOperationNr -gt 1) {
 If ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds))) {
 	Try {
 		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-		$krbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $("DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC=")) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=KRBTGT))" -PropertiesToLoad @("description") -AdditionalProperties @('title')
+		$krbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $("DC=" + $($script:targetedADdomainFQDN).Replace(".", ",DC=")) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=KRBTGT))" -PropertiesToLoad @("description") -AdditionalProperties @('title')
 		$krbTgtObject.title = $krbTgtObject.description
 		Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObject
 		$krbTgtObject.title = $null
 		Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObject
-		$ldapConnection.Dispose()
 		writeLog -dataToLog "The user account '$adRunningUserAccount' is running with Administrators equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)'!..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Continuing Script..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
@@ -8161,7 +7889,7 @@ If ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds))) {
 		writeLog -dataToLog "For this script to run successfully, Administrators equivalent permissions are required in the AD Domain '$($script:targetedADdomainFQDN)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 
-		If ($PSBoundParameters.keys -notcontains "modeOfOperation" -And $PSBoundParameters.keys -notcontains "targetedADforestFQDN" -And $PSBoundParameters.keys -notcontains "targetedADdomainFQDN" -And $PSBoundParameters.keys -notcontains "targetKrbTgtAccountScope") {
+		If ($PSBoundParameters.keys -notcontains "targetKrbTgtAccountScope") {
 			writeLog -dataToLog "Custom credentials are needed..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 			writeLog -dataToLog "Continuing Script And Asking For Credentials..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
@@ -8181,8 +7909,15 @@ If ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds))) {
 				sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 			}
 
-			#BREAK
+			If ($null -ne $ldapConnection) {
+				$ldapConnection.Dispose()
+			}
+
 			EXIT
+		}
+	} Finally {
+		If ($null -ne $ldapConnection) {
+			$ldapConnection.Dispose()
 		}
 	}
 }
@@ -8191,12 +7926,11 @@ If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds))
 		$adminUserAccountRemoteForest = $adminCrds.UserName
 		$adminUserPasswordRemoteForest = $adminCrds.GetNetworkCredential().Password
 		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-		$krbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $("DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC=")) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=KRBTGT))" -PropertiesToLoad @("description") -AdditionalProperties @('title')
+		$krbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $("DC=" + $($script:targetedADdomainFQDN).Replace(".", ",DC=")) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=KRBTGT))" -PropertiesToLoad @("description") -AdditionalProperties @('title')
 		$krbTgtObject.title = $krbTgtObject.description
 		Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObject
 		$krbTgtObject.title = $null
 		Edit-LdapObject -LdapConnection $ldapConnection -Mode Replace -Object $krbTgtObject
-		$ldapConnection.Dispose()
 		writeLog -dataToLog "The user account '$adminUserAccountRemoteForest' is running with Administrators equivalent permissions in the AD Domain '$($script:targetedADdomainFQDN)'!..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Continuing Script..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
@@ -8216,8 +7950,15 @@ If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds))
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
-		#BREAK
+		If ($null -ne $ldapConnection) {
+			$ldapConnection.Dispose()
+		}
+
 		EXIT
+	} Finally {
+		If ($null -ne $ldapConnection) {
+			$ldapConnection.Dispose()
+		}
 	}
 }
 
@@ -8230,38 +7971,32 @@ writeLog -dataToLog ""
 
 # Retrieve Information For The AD Domain That Was Chosen
 Try {
+	$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
 	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
 		$adDomainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $($script:targetedADdomainFQDN))
-		$targetSearchBase = "OU=Domain Controllers," + $("DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC="))
-		$dcsInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(|(primaryGroupID=516)(primaryGroupID=521)))" -PropertiesToLoad @("dNSHostName", "msDS-isRODC", "msDS-KrbTgtLink", "OperatingSystem", "primaryGroupID", "rIDSetReferences", "serverReferenceBL")
-		$ldapConnection.Dispose()
 	}
 	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
+		# The 'DirectoryContext' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 		$adDomainContext = New-Object System.DirectoryServices.ActiveDirectory.DirectoryContext("Domain", $($script:targetedADdomainFQDN), $($adminCrds.UserName), $($adminCrds.GetNetworkCredential().Password))
-		$targetSearchBase = "OU=Domain Controllers," + $("DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC="))
-		$dcsInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(|(primaryGroupID=516)(primaryGroupID=521)))" -PropertiesToLoad @("dNSHostName", "msDS-isRODC", "msDS-KrbTgtLink", "OperatingSystem", "primaryGroupID", "rIDSetReferences", "serverReferenceBL")
-		$ldapConnection.Dispose()
 	}
+	$targetSearchBase = "OU=Domain Controllers," + $("DC=" + $($script:targetedADdomainFQDN).Replace(".", ",DC="))
+	$dcsInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(|(primaryGroupID=516)(primaryGroupID=521)))" -PropertiesToLoad @("dNSHostName", "msDS-isRODC", "msDS-KrbTgtLink", "OperatingSystem", "primaryGroupID", "rIDSetReferences", "serverReferenceBL")
 	$thisADDomain = [System.DirectoryServices.ActiveDirectory.Domain]::GetDomain($adDomainContext)
 } Catch {
 	$thisADDomain = $null
 	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Get List Of DCs In The Targeted AD '$($script:targetedADdomainFQDN)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeExceptionLogError -exceptionRecord $($_)
+} Finally {
+	If ($null -ne $ldapConnection) {
+		$ldapConnection.Dispose()
+	}
 }
 
 If ($thisADDomain) {
 	# Retrieve The Domain NC DN
 	$script:targetedADdomainDefaultNCDN = $thisADDomain.GetDirectoryEntry().Properties["distinguishedName"].Value
-	
+
 	# Retrieve The Domain SID
 	$objectSidBytes = $thisADDomain.GetDirectoryEntry().Properties["objectSid"].Value
 	$script:targetedADdomainDomainSID = (New-Object System.Security.Principal.SecurityIdentifier($objectSidBytes, 0)).Value
@@ -8270,75 +8005,31 @@ If ($thisADDomain) {
 	$script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN = $thisADDomain.PdcRoleOwner.Name
 
 	# Retrieve The DSA DN Of RWDC In The AD Domain That Hosts The PDC FSMO Role
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-			$script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
+		$script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For Domain Controller With 'dNSHostName=$($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For Domain Controller With 'dNSHostName=$($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-			$script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For Domain Controller With 'dNSHostName=$($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 
 	# Retrieve Domain Functional Level/Mode Of The AD Domain
 	$script:targetedADdomainDomainFunctionalMode = $thisADDomain.DomainMode
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-			$script:targetedADdomainDomainFunctionalModeLevel = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestPartitionsContainerDN) -searchFilter "(&(objectClass=crossRef)(nCName=$('DC=' + $($script:targetedADdomainFQDN).replace('.',',DC='))))" -PropertiesToLoad @("msDS-Behavior-Version"))."msDS-Behavior-Version"
+	Try {
+		$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
+		$script:targetedADdomainDomainFunctionalModeLevel = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestPartitionsContainerDN) -searchFilter "(&(objectClass=crossRef)(nCName=$('DC=' + $($script:targetedADdomainFQDN).replace('.',',DC='))))" -PropertiesToLoad @("msDS-Behavior-Version"))."msDS-Behavior-Version"
+	} Catch {
+		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For Cross Reference Object With 'nCName=$('DC=' + $($script:targetedADdomainFQDN).replace('.',',DC='))'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogError -exceptionRecord $($_)
+	} Finally {
+		If ($null -ne $ldapConnection) {
 			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For Cross Reference Object With 'nCName=$('DC=' + $($script:targetedADdomainFQDN).replace('.',',DC='))'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		}
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		Try {
-			$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-			$script:targetedADdomainDomainFunctionalModeLevel = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestPartitionsContainerDN) -searchFilter "(&(objectClass=crossRef)(nCName=$('DC=' + $($script:targetedADdomainFQDN).replace('.',',DC='))))" -PropertiesToLoad @("msDS-Behavior-Version"))."msDS-Behavior-Version"
-			$ldapConnection.Dispose()
-		} Catch {
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For Cross Reference Object With 'nCName=$('DC=' + $($script:targetedADdomainFQDN).replace('.',',DC='))' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 		}
 	}
 	If ($($script:targetedADdomainDomainFunctionalModeLevel) -eq 7 -And $targetedADdomainDomainFunctionalMode -eq "Unknown") {
@@ -8352,171 +8043,156 @@ If ($thisADDomain) {
 		# Execute An RSoP Against The Nearest RWDC In The Targeted AD Domain To Determine The Result Settings And The GPO(s) That Provided The Final Setting
 		# Get The List Of GPOs That Were Processed For RSoP So We Can Map The GUID Back To Show Which GPO Won
 		# Determine The Max Tgt Lifetime In Hours From The Winning GPO And The Max Clock Skew In Minutes From The Winning GPO
-		If ($localADforest -eq $true) {
-			# Try To Determine The User Account To Use During RSoP
-			$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $($script:targetedADdomainDomainSID)
-			If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
-				$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
-					SettingName   = "MaxTicketAge";
-					SettingValue  = $script:maxTgtLifetimeHrs;
-					SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-					SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
-				}
-				$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
-					SettingName   = "MaxClockSkew";
-					SettingValue  = $script:maxClockSkewMins;
-					SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-					SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
-				}				
-			} Else {
+		# Try To Determine The User Account To Use During RSoP
+		$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $($script:targetedADdomainDomainSID) -localADforest $localADforest -adminCrds $adminCrds
+		If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
+			$kerberosPolicyMaxTgtAgeObject = [PSCustomObject]@{
+				SettingName   = "MaxTicketAge"
+				SettingValue  = $script:maxTgtLifetimeHrs
+				SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+				SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))"
+			}
+			$kerberosPolicyMaxClockSkewObject = [PSCustomObject]@{
+				SettingName   = "MaxClockSkew"
+				SettingValue  = $script:maxClockSkewMins
+				SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+				SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))"
+			}
+		} Else {
+			If ($localADforest -eq $true) {
 				# Run An RsOP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
 				Try {
-					Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -ErrorAction STOP > $null
+					$gpRSoPKerberosFilePath = "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
+					Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path $gpRSoPKerberosFilePath -ErrorAction STOP > $null
 				} Catch {
 					# PLACEHOLDER
 				}
 
 				# Determine The Kerberos Policy Settings
-				If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml") {
-					[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
+				If (Test-Path $gpRSoPKerberosFilePath) {
+					[xml]$gpRSoPxml = Get-Content $gpRSoPKerberosFilePath
 					$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject = determineKerberosPolicySettings -gpRSoPxml $gpRSoPxml
 
 					Try {
-						Remove-Item "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -Force -ErrorAction Stop
+						Remove-Item $gpRSoPKerberosFilePath -Force -ErrorAction STOP
 					} Catch {
 						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error Removing The RSoP File '$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "Error Removing The RSoP File '$gpRSoPKerberosFilePath'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeExceptionLogError -exceptionRecord $($_)
 					}
 				} Else {
-					$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
-						SettingName   = "MaxTicketAge";
-						SettingValue  = $script:maxTgtLifetimeHrs;
-						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-						SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
+					$kerberosPolicyMaxTgtAgeObject = [PSCustomObject]@{
+						SettingName   = "MaxTicketAge"
+						SettingValue  = $script:maxTgtLifetimeHrs
+						SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+						SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)"
 					}
-					$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
-						SettingName   = "MaxClockSkew";
-						SettingValue  = $script:maxClockSkewMins;
-						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-						SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
-					}
-				}
-			}
-		}
-		If ($localADforest -eq $false) {
-			If ([string]::IsNullOrEmpty($adminCrds)) {
-				$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -ErrorAction Stop
-			} Else {
-				$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -Credential $adminCrds -ErrorAction Stop
-			}
-			$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject, $accountToChooseForRSoP = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainFQDN), $($script:targetedADdomainDomainSID), $($script:targetedADdomainNearestRWDCFQDN), $execDateTimeCustom, $loggingDef, $loadPoSHModulesDef, $determineUserAccountForRSoPDef, $determineKerberosPolicySettingsDef -ScriptBlock {
-				Param (
-					$targetedADdomainFQDN,
-					$targetedADdomainDomainSID,
-					$targetedADdomainNearestRWDCFQDN,
-					$execDateTimeCustom,
-					$loggingDef,
-					$loadPoSHModulesDef,
-					$determineUserAccountForRSoPDef,
-					$determineKerberosPolicySettingsDef
-				)
-
-				. ([ScriptBlock]::Create($loggingDef))
-				. ([ScriptBlock]::Create($loadPoSHModulesDef))
-				. ([ScriptBlock]::Create($determineUserAccountForRSoPDef))
-				. ([ScriptBlock]::Create($determineKerberosPolicySettingsDef))
-
-				"GroupPolicy" | ForEach-Object {
-					$poshModuleState = $null
-					$poshModuleState = loadPoSHModules -poshModule $_ -ignoreRemote $true
-					If ($poshModuleState -eq "NotAvailable") {
-						BREAK
+					$kerberosPolicyMaxClockSkewObject = [PSCustomObject]@{
+						SettingName   = "MaxClockSkew"
+						SettingValue  = $script:maxClockSkewMins
+						SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+						SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)"
 					}
 				}
+				$gpRSoPKerberosFilePath = $null
+			}
+			If ($localADforest -eq $false) {
+				If ([string]::IsNullOrEmpty($adminCrds)) {
+					$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -ErrorAction STOP
+				} Else {
+					$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -Credential $adminCrds -ErrorAction STOP
+				}
 
-				If ($poshModuleState -eq "HasBeenLoaded" -Or $poshModuleState -eq "AlreadyLoaded") {
-					# Try To Determine The User Account To Use During RSoP
-					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
-					If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
-						$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
-							SettingName   = "MaxTicketAge";
-							SettingValue  = $script:maxTgtLifetimeHrs;
-							SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-							SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
+				# Connect To The Remote DC To Execute The RSoP And Determine The Settings
+				$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject, $scriptErrorMessage = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainFQDN), $($script:targetedADdomainNearestRWDCFQDN), $execDateTimeCustom, $accountToChooseForRSoP, $($script:maxTgtLifetimeHrs), $($script:maxClockSkewMins), $writeLogDef, $loadPoSHModulesDef, $determineKerberosPolicySettingsDef -ScriptBlock {
+					[CmdletBinding()]
+					Param (
+						$targetedADdomainFQDN,
+						$targetedADdomainNearestRWDCFQDN,
+						$execDateTimeCustom,
+						$accountToChooseForRSoP,
+						$maxTgtLifetimeHrs,
+						$maxClockSkewMins,
+						$writeLogDef,
+						$loadPoSHModulesDef,
+						$determineKerberosPolicySettingsDef
+					)
+
+					. ([ScriptBlock]::Create($writeLogDef))
+					. ([ScriptBlock]::Create($loadPoSHModulesDef))
+					. ([ScriptBlock]::Create($determineKerberosPolicySettingsDef))
+
+					$scriptErrorMessage = $null
+
+					"GroupPolicy" | ForEach-Object {
+						$poshModuleState = $null
+						$poshModuleState = loadPoSHModules -poshModule $_ -ignoreRemote $true
+						If ($poshModuleState -eq "NotAvailable") {
+							BREAK
 						}
-						$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
-							SettingName   = "MaxClockSkew";
-							SettingValue  = $script:maxClockSkewMins;
-							SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-							SourceGPOName = "Default Value Assumed (Reason: $((Get-Culture).TextInfo.ToTitleCase($accountToChooseForRSoP.Replace('_',' ').ToLower())))";
-						}
-					} Else {
+						writeLog -dataToLog "" -ignoreRemote $true
+					}
+
+					If ($poshModuleState -eq "HasBeenLoaded" -Or $poshModuleState -eq "AlreadyLoaded") {
 						# Run An RSoP To Determine In Which GPO, If Applicable, What The Kerberos Policy Settings Are And Export To XML File
 						Try {
-							Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
+							$gpRSoPKerberosFilePath = "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
+							Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path $gpRSoPKerberosFilePath -ErrorAction STOP > $null
 						} Catch {
 							# PLACEHOLDER
 						}
 
 						# Determine The Kerberos Policy Settings
-						If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml") {
-							[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
+						If (Test-Path $gpRSoPKerberosFilePath) {
+							[xml]$gpRSoPxml = Get-Content $gpRSoPKerberosFilePath
 							$kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject = determineKerberosPolicySettings -gpRSoPxml $gpRSoPxml
 
 							Try {
-								Remove-Item "$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -Force -ErrorAction Stop
+								Remove-Item $gpRSoPKerberosFilePath -Force -ErrorAction STOP
 							} Catch {
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Error Removing The RSoP File '$($ENV:WINDIR + '\TEMP')\gpRSoP_Kerberos_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								$scriptErrorMessage = "Error Removing The RSoP File '$gpRSoPKerberosFilePath'..."
 							}
 						} Else {
-							$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
-								SettingName   = "MaxTicketAge";
-								SettingValue  = $script:maxTgtLifetimeHrs;
-								SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-								SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
+							$kerberosPolicyMaxTgtAgeObject = [PSCustomObject]@{
+								SettingName   = "MaxTicketAge"
+								SettingValue  = $maxTgtLifetimeHrs
+								SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+								SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)"
 							}
-							$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
-								SettingName   = "MaxClockSkew";
-								SettingValue  = $script:maxClockSkewMins;
-								SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-								SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)";
+							$kerberosPolicyMaxClockSkewObject = [PSCustomObject]@{
+								SettingName   = "MaxClockSkew"
+								SettingValue  = $maxClockSkewMins
+								SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+								SourceGPOName = "Default Value Assumed (Reason: RSoP Failed For Determined Account)"
 							}
 						}
+						$gpRSoPKerberosFilePath = $null
+					} Else {
+						$kerberosPolicyMaxTgtAgeObject = [PSCustomObject]@{
+							SettingName   = "MaxTicketAge"
+							SettingValue  = $maxTgtLifetimeHrs
+							SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+							SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC - Unable To Perform RSoP)"
+						}
+						$kerberosPolicyMaxClockSkewObject = [PSCustomObject]@{
+							SettingName   = "MaxClockSkew"
+							SettingValue  = $maxClockSkewMins
+							SourceGPOGuid = "00000000-0000-0000-0000-000000000000"
+							SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC - Unable To Perform RSoP)"
+						}
 					}
-				} Else {
-					$kerberosPolicyMaxTgtAgeObject = New-Object -TypeName PSObject -Property @{
-						SettingName   = "MaxTicketAge";
-						SettingValue  = $script:maxTgtLifetimeHrs;
-						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-						SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC - Unable To Perform RSoP)";
-					}
-					$kerberosPolicyMaxClockSkewObject = New-Object -TypeName PSObject -Property @{
-						SettingName   = "MaxClockSkew";
-						SettingValue  = $script:maxClockSkewMins;
-						SourceGPOGuid = "00000000-0000-0000-0000-000000000000";
-						SourceGPOName = "Default Value Assumed (Reason: PoSH Module Not Installed On Remote RWDC - Unable To Perform RSoP)";
-					}
+					Return $kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject, $scriptErrorMessage
 				}
-				Return $kerberosPolicyMaxTgtAgeObject, $kerberosPolicyMaxClockSkewObject, $accountToChooseForRSoP
-			}
-			Remove-PSSession $targetedServerSession
-		}
+				Remove-PSSession $targetedServerSession
 
+				If (-not $([string]::IsNullOrEmpty($scriptErrorMessage))) {
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog $scriptErrorMessage -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					$scriptErrorMessage = $null
+				}
+			}
+		}
 		$script:targetedADdomainMaxTgtLifetimeHrs = $kerberosPolicyMaxTgtAgeObject.SettingValue
 		$script:targetedADdomainMaxTgtLifetimeHrsSourceGPO = $kerberosPolicyMaxTgtAgeObject.SourceGPOName
 		$script:targetedADdomainMaxClockSkewMins = $kerberosPolicyMaxClockSkewObject.SettingValue
@@ -8524,29 +8200,24 @@ If ($thisADDomain) {
 	} Catch {
 		writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 		writeLog -dataToLog "Could Not Lookup 'MaxTicketAge' (Default 10 Hours) And 'MaxClockSkew' (Default 5 minutes) From The Resultant GPO, So Default Values Will Be Assumed." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+		writeExceptionLogWarning -exceptionRecord $($_)
 		Get-ChildItem $(Join-Path $ENV:WINDIR "TEMP") -Filter "gpRSoP*" | ForEach-Object { Remove-Item $_.FullName -force }
 		$script:targetedADdomainMaxTgtLifetimeHrs = $script:maxTgtLifetimeHrs
 		$script:targetedADdomainMaxTgtLifetimeHrsSourceGPO = "Default Value Assumed"
 		$script:targetedADdomainMaxClockSkewMins = $script:maxClockSkewMins
 		$script:targetedADdomainMaxClockSkewMinsSourceGPO = "Default Value Assumed"
-		$accountToChooseForRSoP = "Unused/Undetermined (Reason: Unknown Error/Issue)"
+		$accountToChooseForRSoP = "UNDETERMINED_ACCOUNT_FOR_RSOP_UNKNOWN_ERROR"
 	}
 } Else {
-	$script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN = "Unavailable"
-	$script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN = "Unavailable"
-	$script:targetedADdomainDomainFunctionalMode = "Unavailable"
-	$script:targetedADdomainDomainFunctionalModeLevel = "Unavailable"
-	$script:targetedADdomainMaxTgtLifetimeHrs = "Unavailable"
-	$script:targetedADdomainMaxTgtLifetimeHrsSourceGPO = "Unavailable"
-	$script:targetedADdomainMaxClockSkewMins = "Unavailable"
-	$script:targetedADdomainMaxClockSkewMinsSourceGPO = "Unavailable"
+	$script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN = "Unavailable (Reason: Failed Connection)"
+	$script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN = "Unavailable (Reason: Failed Connection)"
+	$script:targetedADdomainDomainFunctionalMode = "Unavailable (Reason: Failed Connection)"
+	$script:targetedADdomainDomainFunctionalModeLevel = "Unavailable (Reason: Failed Connection)"
+	$script:targetedADdomainMaxTgtLifetimeHrs = "Unavailable (Reason: Failed Connection)"
+	$script:targetedADdomainMaxTgtLifetimeHrsSourceGPO = "Unavailable (Reason: Failed Connection)"
+	$script:targetedADdomainMaxClockSkewMins = "Unavailable (Reason: Failed Connection)"
+	$script:targetedADdomainMaxClockSkewMinsSourceGPO = "Unavailable (Reason: Failed Connection)"
+	$accountToChooseForRSoP = "UNDETERMINED_ACCOUNT_FOR_RSOP_FAILED_CONNECTION"
 }
 
 # Present The Information
@@ -8605,7 +8276,6 @@ If ($($script:targetedADdomainDomainFunctionalModeLevel) -ne "Unavailable" -And 
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
 
-	#BREAK
 	EXIT
 }
 
@@ -8643,40 +8313,19 @@ If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr
 	$rwdcKrbTgtSamAccountName = "krbtgt_TEST"
 }
 $rwdcKrbTgtObject = $null
-If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-	Try {
-		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-		$rwdcKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$rwdcKrbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
+Try {
+	$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
+	$rwdcKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$rwdcKrbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
+} Catch {
+	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$rwdcKrbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeExceptionLogError -exceptionRecord $($_)
+} Finally {
+	If ($null -ne $ldapConnection) {
 		$ldapConnection.Dispose()
-	} Catch {
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$rwdcKrbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 	}
 }
-If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-	Try {
-		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-		$rwdcKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN)searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$rwdcKrbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
-		$ldapConnection.Dispose()
-	} Catch {
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$rwdcKrbTgtSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-		writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	}
-}
+
 # Retrieve The Object Of The KrbTgt Account
 $rwdcKrbTgtObjectDN = $null
 $rwdcKrbTgtPwdLastSet = $null
@@ -8725,13 +8374,13 @@ If ([int]$nrOfRWDCsToProcess -gt 0) {
 			"Site Name" = $($_.serverReferenceBL.Split(",")[2].Replace("CN=", ""))
 			"DS Type"   = "Read/Write"
 		}
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Krb Tgt" -Value $rwdcKrbTgtSamAccountName
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Pwd Last Set" -Value $rwdcKrbTgtPwdLastSet
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Org RWDC" -Value $rwdcKrbTgtObjectMetadataAttribPwdLastSetOrgRWDCFQDN
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Org Time" -Value $rwdcKrbTgtObjectMetadataAttribPwdLastSetOrgTime
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Ver" -Value $rwdcKrbTgtObjectMetadataAttribPwdLastSetVersion
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "IP Address" -Value $(Try { (([System.Net.Dns]::GetHostEntry($rwdcFQDN)).AddressList | Where-Object { $_.AddressFamily -eq "InterNetwork" }).IPAddressToString } Catch { "Unknown" })
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "OS Version" -Value $($_.OperatingSystem)
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Krb Tgt", $rwdcKrbTgtSamAccountName))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Pwd Last Set", $rwdcKrbTgtPwdLastSet))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Org RWDC", $rwdcKrbTgtObjectMetadataAttribPwdLastSetOrgRWDCFQDN))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Org Time", $rwdcKrbTgtObjectMetadataAttribPwdLastSetOrgTime))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Ver", $rwdcKrbTgtObjectMetadataAttribPwdLastSetVersion))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("IP Address", $(Try { (([System.Net.Dns]::GetHostEntry($rwdcFQDN)).AddressList | Where-Object { $_.AddressFamily -eq "InterNetwork" }).IPAddressToString } Catch { "Unknown" })))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("OS Version", $($_.OperatingSystem)))
 
 		# Define The Ports To Check Against
 		$ports = 389 # LDAP
@@ -8762,54 +8411,43 @@ If ([int]$nrOfRWDCsToProcess -gt 0) {
 				} Catch {
 					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "Error Connecting To '$rwdcFQDN' For 'rootDSE'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
 				}
 			}
 			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
 				Try {
+					# The 'DirectoryEntry' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 					$rwdcRootDSEObj = New-Object System.DirectoryServices.DirectoryEntry(("LDAP://$rwdcFQDN/rootDSE"), $adminUserAccountRemoteForest, $adminUserPasswordRemoteForest)
 				} Catch {
 					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "Error Connecting To '$rwdcFQDN' For 'rootDSE' Using '$adminUserAccountRemoteForest'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
 				}
 			}
 			If ([string]::IsNullOrEmpty($rwdcRootDSEObj.Path)) {
 				# If It Throws An Error Then The RWDC Is Not Available/Reachable And Increase The Counter Of Unreachable RWDCs
-				$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $false
+				$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Reachable", $false))
 				$nrOfUnReachableRWDCs += 1
 
 			} Else {
 				# If It Does Not Throw An Error Then The RWDC Is Available/Reachable And Increase The Counter Of Reachable RWDCs
-				$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $true
+				$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Reachable", $true))
 				$nrOfReachableRWDCs += 1
 			}
 		} Else {
 			# If The Connection Check Is Not OK Then The RWDC Is Not Available/Reachable And Increase The Counter Of Unreachable RWDCs
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $false
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Reachable", $false))
 			$nrOfUnReachableRWDCs += 1
 		}
 
 		If (($tableOfADDomainsInADForest | Where-Object { $_.Name -eq $($script:targetedADdomainFQDN) }).PDCFsmoOwner -eq $rwdcFQDN) {
 			# If The RWDC Is The RWDC With The PDC FSMO, Then Do Not Specify A Source RWDC As The RWDC With The PDC FSMO Is The Source Originating RWDC
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC FQDN" -Value "N.A."
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC DSA" -Value "N.A."
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC FQDN", "N.A."))
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC DSA", "N.A."))
 		} Else {
 			# If The RWDC Is Not The RWDC With The PDC FSMO, Then Specify A Source RWDC Being The RWDC With The PDC FSMO As The Source Originating RWDC
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC FQDN" -Value $($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC DSA" -Value $($script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN)
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC FQDN", $($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)))
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC DSA", $($script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN)))
 		}
 
 		# Increase The Counter For The Number Of RWDCs
@@ -8827,32 +8465,28 @@ If ([int]$nrOfRWDCsToProcess -gt 0) {
 	writeLog -dataToLog " * RWDCs DO NOT Have Their Default Primary Group ID 516..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 
-	$listOfDiscoveredDCs = @()
+	$listOfDiscoveredDCs = [System.Collections.Generic.List[string]]::new()
 	$thisADDomain.DomainControllers.Name | ForEach-Object {
 		# Retrieve Information For The AD Domain That Was Chosen
 		$dcInADDomain = $null
 		Try {
-			If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-				$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-				$targetSearchBase = "DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC=")
-				$dcInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(dNSHostName=$_))" -PropertiesToLoad @("distinguishedName","dNSHostName", "msDS-isRODC", "name", "primaryGroupID")
-				$ldapConnection.Dispose()
-			}
-			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-				$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-				$targetSearchBase = "DC=" + $($script:targetedADdomainFQDN).Replace(".",",DC=")
-				$dcInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(dNSHostName=$_))" -PropertiesToLoad @("distinguishedName","dNSHostName", "msDS-isRODC", "name", "primaryGroupID")
-				$ldapConnection.Dispose()
-			}
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
+			$targetSearchBase = "DC=" + $($script:targetedADdomainFQDN).Replace(".", ",DC=")
+			$dcInADDomain = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectClass=computer)(dNSHostName=$_))" -PropertiesToLoad @("distinguishedName", "dNSHostName", "msDS-isRODC", "name", "primaryGroupID")
 		} Catch {
 			# PLACEHOLDER
+		} Finally {
+			If ($null -ne $ldapConnection) {
+				$ldapConnection.Dispose()
+			}
 		}
-		$discoveredDC = New-Object -TypeName PSObject
-		$discoveredDC | Add-Member -MemberType NoteProperty -Name "Host Name" -Value $($_)
-		$discoveredDC | Add-Member -MemberType NoteProperty -Name "DS Type" -Value $(If ($dcInADDomain."msDS-isRODC" -eq $false) {"Read/Write"} ElseIf ($dcInADDomain."msDS-isRODC" -eq $true) {"Read-Only"} Else {"UNKNOWN"})
-		$discoveredDC | Add-Member -MemberType NoteProperty -Name "PGID" -Value $($dcInADDomain.primaryGroupID)
-		$discoveredDC | Add-Member -MemberType NoteProperty -Name "DN Parent Container/OU" -Value $($($dcInADDomain.distinguishedName).Replace("CN=$($dcInADDomain.name),",""))
-		$listOfDiscoveredDCs += $discoveredDC
+		$discoveredDC = [PSCustomObject]@{
+			"Host Name"              = $($_)
+			"DS Type"                = $(If ($dcInADDomain."msDS-isRODC" -eq $false) { "Read/Write" } ElseIf ($dcInADDomain."msDS-isRODC" -eq $true) { "Read-Only" } Else { "UNKNOWN" })
+			"PGID"                   = $($dcInADDomain.primaryGroupID)
+			"DN Parent Container/OU"	= $($($dcInADDomain.distinguishedName).Replace("CN=$($dcInADDomain.name),", ""))
+		}
+		$listOfDiscoveredDCs.Add($discoveredDC)
 	}
 
 	writeLog -dataToLog "List Of Discovered Domain Controllers In AD Domain '$($script:targetedADdomainFQDN)'..."
@@ -8870,7 +8504,6 @@ If ([int]$nrOfRWDCsToProcess -gt 0) {
 		sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 	}
 
-	#BREAK
 	EXIT
 }
 
@@ -8904,83 +8537,45 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 
 		# Define The Columns For The RODCs In The AD Domain To Be Filled In
 		$tableOfDCsInADDomainObj = [PSCustomObject]@{
-			"Host Name" = $rodcFQDN
+			"Host Name"	= $rodcFQDN
 			"PDC"       = $false
-			"Site Name" = $(If ($_.OperatingSystem) { $_.serverReferenceBL.Split(",")[2].Replace("CN=", "") } Else { "Unknown" })
+			"Site Name"	= $(If ($_.OperatingSystem) { $_.serverReferenceBL.Split(",")[2].Replace("CN=", "") } Else { "Unknown" })
 			"DS Type"   = "Read-Only"
 		}
 
 		# Retrieve The Object Of The KrbTgt Account
 		$rodcKrbTgtSamAccountName = $null
 		$rodcKrbTgtObject = $null
-		If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
+		Try {
+			$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
 
-				# Use The PROD/REAL KrbTgt Account Of The RODC, Or Use It As The Base For The TEST/BOGUS KrbTgt Account Of The RODC
-				$rodcKrbTgtSamAccountName = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(sAMAccountName=krbtgt*)(msDS-KrbTgtLinkBl=$($_.distinguishedName)))" -PropertiesToLoad @("sAMAccountName")).sAMAccountName
+			# Use The PROD/REAL KrbTgt Account Of The RODC, Or Use It As The Base For The TEST/BOGUS KrbTgt Account Of The RODC
+			$rodcKrbTgtSamAccountName = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(sAMAccountName=krbtgt*)(msDS-KrbTgtLinkBl=$($_.distinguishedName)))" -PropertiesToLoad @("sAMAccountName")).sAMAccountName
 
-				# The TEST/BOGUS KrbTgt Account Of The RODC
-				If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 8 -Or $modeOfOperationNr -eq 9) {
-					$rodcKrbTgtSamAccountName = $rodcKrbTgtSamAccountName + "_TEST"
-				}
-				$rodcKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN)-searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$rodcKrbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
+			# The TEST/BOGUS KrbTgt Account Of The RODC
+			If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 8 -Or $modeOfOperationNr -eq 9) {
+				$rodcKrbTgtSamAccountName = $rodcKrbTgtSamAccountName + "_TEST"
+			}
+			$rodcKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN)-searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$rodcKrbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
+		} Catch {
+			writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+
+			# When Using The PROD/REAL KrbTgt Account Of The RODC
+			If ($modeOfOperationNr -eq 1 -Or $modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6 -Or $modeOfOperationNr -eq 7) {
+				writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine The PROD/REAL KrbTgt Account In Use By '$rodcFQDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			}
+
+			# When Using The PROD/REAL KrbTgt Account Of The RODC
+			If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 8 -Or $modeOfOperationNr -eq 9) {
+				writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine The TEST/BOGUS KrbTgt Account In Use By '$rodcFQDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+			}
+			writeExceptionLogError -exceptionRecord $($_)
+		} Finally {
+			If ($null -ne $ldapConnection) {
 				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-
-				# When Using The PROD/REAL KrbTgt Account Of The RODC
-				If ($modeOfOperationNr -eq 1 -Or $modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6 -Or $modeOfOperationNr -eq 7) {
-					writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine The PROD/REAL KrbTgt Account In Use By '$rodcFQDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-
-				# When Using The PROD/REAL KrbTgt Account Of The RODC
-				If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 8 -Or $modeOfOperationNr -eq 9) {
-					writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine The TEST/BOGUS KrbTgt Account In Use By '$rodcFQDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 			}
 		}
-		If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-			Try {
-				$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-
-				# Use The PROD/REAL KrbTgt Account Of The RODC, Or Use It As The Base For The TEST/BOGUS KrbTgt Account Of The RODC
-				$rodcKrbTgtSamAccountName = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(sAMAccountName=krbtgt*)(msDS-KrbTgtLinkBl=$($_.distinguishedName)))" -PropertiesToLoad @("sAMAccountName")).sAMAccountName
-
-				# The TEST/BOGUS KrbTgt Account Of The RODC
-				If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 8 -Or $modeOfOperationNr -eq 9) {
-					$rodcKrbTgtSamAccountName = $rodcKrbTgtSamAccountName + "_TEST"
-				}
-				$rodcKrbTgtObject = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$rodcKrbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
-				$ldapConnection.Dispose()
-			} Catch {
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine The KrbTgt Account In Use By '$rodcFQDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				# When Using The PROD/REAL KrbTgt Account Of The RODC
-				If ($modeOfOperationNr -eq 1 -Or $modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6 -Or $modeOfOperationNr -eq 7) {
-					writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine The PROD/REAL KrbTgt Account In Use By '$rodcFQDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-				# When Using The PROD/REAL KrbTgt Account Of The RODC
-				If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 8 -Or $modeOfOperationNr -eq 9) {
-					writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine The TEST/BOGUS KrbTgt Account In Use By '$rodcFQDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				}
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-			}
-		}
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Krb Tgt" -Value $rodcKrbTgtSamAccountName
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Krb Tgt", $rodcKrbTgtSamAccountName))
 
 		$rodcKrbTgtObjectDN = $null
 		$rodcKrbTgtPwdLastSet = $null
@@ -9011,12 +8606,12 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 			$rodcKrbTgtObjectMetadataAttribPwdLastSetOrgTime = "No Such Object"
 			$rodcKrbTgtObjectMetadataAttribPwdLastSetVersion = "No Such Object"
 		}
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Pwd Last Set" -Value $rodcKrbTgtPwdLastSet
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Org RWDC" -Value $rodcKrbTgtObjectMetadataAttribPwdLastSetOrgRWDCFQDN
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Org Time" -Value $rodcKrbTgtObjectMetadataAttribPwdLastSetOrgTime
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Ver" -Value $rodcKrbTgtObjectMetadataAttribPwdLastSetVersion
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "IP Address" -Value $(Try { (([System.Net.Dns]::GetHostEntry($rodcFQDN)).AddressList | Where-Object { $_.AddressFamily -eq "InterNetwork" }).IPAddressToString } Catch { "Unknown" })
-		$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "OS Version" -Value $($_.OperatingSystem)
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Pwd Last Set", $rodcKrbTgtPwdLastSet))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Org RWDC", $rodcKrbTgtObjectMetadataAttribPwdLastSetOrgRWDCFQDN))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Org Time", $rodcKrbTgtObjectMetadataAttribPwdLastSetOrgTime))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Ver", $rodcKrbTgtObjectMetadataAttribPwdLastSetVersion))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("IP Address", $(Try { (([System.Net.Dns]::GetHostEntry($rodcFQDN)).AddressList | Where-Object { $_.AddressFamily -eq "InterNetwork" }).IPAddressToString } Catch { "Unknown" })))
+		$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("OS Version", $($_.OperatingSystem)))
 
 		# Define The Ports To Check Against
 		$ports = 389 # LDAP
@@ -9025,7 +8620,6 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 		$connectionCheckOK = $true
 
 		# For Every Defined Port Check The Connection And Report
-		$failedPorts = [System.Collections.Generic.List[Object]]::New()
 		$ports | ForEach-Object {
 			# Set The Port To Check Against
 			$port = $null
@@ -9035,7 +8629,6 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 			$connectionResult = $null
 			$connectionResult = portConnectionCheck -serverIPOrFQDN $rodcFQDN -port $port -timeOut $connectionTimeout
 			If ($connectionResult -eq "ERROR") {
-				$failedPorts.Add($port)
 				$script:connectionCheckOK = $false
 			}
 		}
@@ -9049,42 +8642,31 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 				} Catch {
 					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "Error Connecting To '$rodcFQDN' For 'rootDSE'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
 				}
 			}
 			If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
 				Try {
+					# The 'DirectoryEntry' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 					$rodcRootDSEObj = New-Object System.DirectoryServices.DirectoryEntry(("LDAP://$rodcFQDN/rootDSE"), $adminUserAccountRemoteForest, $adminUserPasswordRemoteForest)
 				} Catch {
 					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "Error Connecting To '$rodcFQDN' For 'rootDSE' Using '$adminUserAccountRemoteForest'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
 				}
 			}
 			If ([string]::IsNullOrEmpty($rodcRootDSEObj.Path)) {
 				# If It Throws An Error Then The RODC Is Not Available/Reachable And Increase The Counter Of Unreachable RODCs
-				$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $false
+				$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Reachable", $false))
 				$nrOfUnReachableRODCs += 1
 			} Else {
 				# If It Does Not Throw An Error Then The RWDC Is Available/Reachable And Increase The Counter Of Reachable RODCs
-				$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $true
+				$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Reachable", $true))
 				$nrOfReachableRODCs += 1
 			}
 		} Else {
 			# If The Connection Check Is Not OK Then The RWDC Is Not Available/Reachable And Increase The Counter Of Unreachable RODCs
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Reachable" -Value $false
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Reachable", $false))
 			$nrOfUnReachableRODCs += 1
 		}
 
@@ -9100,6 +8682,7 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 					$dsDirSearcher.SearchRoot = "LDAP://$rodcFQDN/$rodcObjNTDSSettingsObjectDN"
 				}
 				If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+					# The 'DirectoryEntry' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 					$dsDirSearcher.SearchRoot = New-Object System.DirectoryServices.DirectoryEntry(("LDAP://$rodcFQDN/$rodcObjNTDSSettingsObjectDN"), $adminUserAccountRemoteForest, $adminUserPasswordRemoteForest)
 				}
 				$dsDirSearcher.Filter = $null
@@ -9115,13 +8698,7 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 					If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
 						writeLog -dataToLog "Error Querying AD Against '$rodcFQDN' For Object '$rodcObjNTDSSettingsObjectDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					}
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
 				}
 
 				# For Every DSA DN Of The Source RWDC Retrieved
@@ -9140,54 +8717,43 @@ If ([int]$nrOfRODCsToProcess -gt 0) {
 						} Catch {
 							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 							writeLog -dataToLog "Error Connecting To '$($script:targetedADdomainNearestRWDCFQDN)' For Object '$sourceRWDCServerObjectDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							writeExceptionLogError -exceptionRecord $($_)
 						}
 					}
 					If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
 						Try {
+							# The 'DirectoryEntry' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API
 							$sourceRWDCServerObjectObj = New-Object System.DirectoryServices.DirectoryEntry(("LDAP://$($script:targetedADdomainNearestRWDCFQDN)/$sourceRWDCServerObjectDN"), $adminUserAccountRemoteForest, $adminUserPasswordRemoteForest)
 						} Catch {
 							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 							writeLog -dataToLog "Error Connecting To '$($script:targetedADdomainNearestRWDCFQDN)' For Object '$sourceRWDCServerObjectDN' Using '$adminUserAccountRemoteForest'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							writeExceptionLogError -exceptionRecord $($_)
 						}
 					}
 
 					If ($userIsSystem -eq $true) {
 						# When The Script Runs As SYSTEM, The HostName Of Source RWDC To Be Used By The RODC, Being The RWDC With The PDC FSMO Role
-						$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC FQDN" -Value $($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)
+						$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC FQDN", $($script:targetedADdomainRWDCFQDNWithPDCFSMOFQDN)))
 
 						# When The Script Runs As SYSTEM, The DSA DN Of Source RWDC To Be Used By The RODC, Being The RWDC With The PDC FSMO Role
-						$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC DSA" -Value $($script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN)
+						$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC DSA", $($script:targetedADdomainRWDCFQDNWithPDCFSMONTDSSettingsObjectDN)))
 					} Else {
 						# When The Script DOES NOT Run As SYSTEM, But Rather As A High-Privileged User Account, The HostName Of The Real Source RWDC To Be Used By The RODC
-						$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC FQDN" -Value $sourceRWDCServerObjectObj.dnshostname[0]
+						$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC FQDN", $sourceRWDCServerObjectObj.dnshostname[0]))
 
 						# When The Script DOES NOT Run As SYSTEM, But Rather As A High-Privileged User Account, The DSA DN Of The Real Source RWDC To Be Used By The RODC
-						$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC DSA" -Value $sourceRWDCsNTDSSettingsObjectDN[0]
+						$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC DSA", $sourceRWDCsNTDSSettingsObjectDN[0]))
 					}
 				}
 			} Else {
 				# If The RODC Is Available/Reachable
-				$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC FQDN" -Value "RODC Unreachable"
-				$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC DSA" -Value "RODC Unreachable"
+				$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC FQDN", "RODC Unreachable"))
+				$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC DSA", "RODC Unreachable"))
 			}
 		} Else {
 			# If The RODC Does Not Have An Operating System Specified, Then It Is Most Likely Not A Windows RODC
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC FQDN" -Value "Unknown"
-			$tableOfDCsInADDomainObj | Add-Member -MemberType NoteProperty -Name "Source RWDC DSA" -Value "Unknown"
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC FQDN", "Unknown"))
+			$tableOfDCsInADDomainObj.PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("Source RWDC DSA", "Unknown"))
 		}
 
 		If ($_.OperatingSystem) {
@@ -9226,32 +8792,25 @@ writeLog -dataToLog "     Although this is possible for any targeted object, thi
 writeLog -dataToLog "     do not exist yet. This may also occur for an appliance acting as an RODC as in that case no KrbTgt TEST/BOGUS account is created." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 $krbTgtAADname = "krbtgt_AzureAD"
 Try {
-	If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-		$krbTgtAAD = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(name=$krbTgtAADname))"
-		$ldapConnection.Dispose()
-	}
-	If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-		$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-		$krbTgtAAD = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(name=$krbTgtAADname))"
-		$ldapConnection.Dispose()
-	}
+	$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
+	$krbTgtAAD = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(name=$krbTgtAADname))" -PropertiesToLoad @("pwdlastset")
 } Catch {
 	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' To Determine If An Azure AD KrbTgt Account Existed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+	writeExceptionLogError -exceptionRecord $($_)
+} Finally {
+	If ($null -ne $ldapConnection) {
+		$ldapConnection.Dispose()
+	}
 }
 If ($krbTgtAAD) {
 	writeLog -dataToLog "" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "WARNING:" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog " - This is a WARNING message for you to READ and ACT ON, and NOT an error. The script WILL NOT reset the password of the '$krbTgtAADname' account!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog " - In this AD domain '$($script:targetedADdomainFQDN)' the special purpose krbtgt account '$krbTgtAADname' for Azure AD was found (not listed in the table above though!)!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog " - Previous Password Set Date/Time For '$krbTgtAADname'...: $(Get-Date $([datetime]::fromfiletime($krbTgtAAD.pwdLastSet)) -f 'yyyy-MM-dd HH:mm:ss')" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog " - DO NOT reset the password of this krbtgt account in any way except using the official method to reset the password and rotate the keys" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "     (See: - https://docs.microsoft.com/en-us/azure/active-directory/authentication/howto-authentication-passwordless-security-key-on-premises)" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog " - To reset the password and rotate the keys of the krbtgt account '$krbTgtAADname' perform the following steps:" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
@@ -9264,25 +8823,22 @@ If ($krbTgtAAD) {
 	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "       # AD Domain/Enterprise Admin Credentials" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "       `$adDomainAdminAccount = Read-Host `"AD Admin Account`"" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       `$adDomainAdminPassword = Read-Host `"AD Admin Account Password`" -AsSecureString" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       `$secureAdDomainAdminPassword = ConvertTo-SecureString `$adDomainAdminPassword -AsPlainText -Force" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       `$adDomainAdminCreds = New-Object System.Management.Automation.PSCredential `$adDomainAdminAccount, `$secureAdDomainAdminPassword" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       `$adDomainAdminPasswordSecureString = Read-Host `"AD Admin Account Password`" -AsSecureString" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       `$adDomainAdminCreds = New-Object System.Management.Automation.PSCredential `$adDomainAdminAccount, `$adDomainAdminPasswordSecureString" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       # Azure AD Global Admin Credentials" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       `$aadDomainAdminAccount = Read-Host `"Azure AD Admin Account`"" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       `$aadDomainAdminPassword = Read-Host `"Azure AD Admin Account Password`" -AsSecureString" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       [string]`$aadDomainAdminPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR(`$aadDomainAdminPassword))" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       `$secureAadDomainAdminPassword = ConvertTo-SecureString `$aadDomainAdminPassword -AsPlainText -Force" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       `$aadDomainAdminCreds = New-Object System.Management.Automation.PSCredential `$aadDomainAdminAccount, `$secureAadDomainAdminPassword" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       # Entra ID Global Admin Credentials" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       `$eidGlobalAdminAccount = Read-Host `"Entra ID Global Admin Account`"" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       `$eidGlobalAdminPasswordSecureString = Read-Host `"Entra ID Global Admin Account Password`" -AsSecureString" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       `$eidGlobalAdminCreds = New-Object System.Management.Automation.PSCredential `$eidGlobalAdminAccount, `$eidGlobalAdminPasswordSecureString" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "       # Check the CURRENT status of the Azure AD Kerberos Server object in Active Directory" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       Get-AzureADKerberosServer -Domain $($script:targetedADdomainFQDN) -DomainCredential `$adDomainAdminCreds -CloudCredential `$aadDomainAdminCreds" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       Get-AzureADKerberosServer -Domain $($script:targetedADdomainFQDN) -DomainCredential `$adDomainAdminCreds -CloudCredential `$eidGlobalAdminCreds" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "       # Reset the password and rotate the keys" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       Set-AzureADKerberosServer -Domain $($script:targetedADdomainFQDN) -DomainCredential `$adDomainAdminCreds -CloudCredential `$aadDomainAdminCreds -RotateServerKey" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       Set-AzureADKerberosServer -Domain $($script:targetedADdomainFQDN) -DomainCredential `$adDomainAdminCreds -CloudCredential `$eidGlobalAdminCreds -RotateServerKey" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "       # Check the NEW status of the Azure AD Kerberos Server object in Active Directory" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-	writeLog -dataToLog "       Get-AzureADKerberosServer -Domain $($script:targetedADdomainFQDN) -DomainCredential `$adDomainAdminCreds -CloudCredential `$aadDomainAdminCreds" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+	writeLog -dataToLog "       Get-AzureADKerberosServer -Domain $($script:targetedADdomainFQDN) -DomainCredential `$adDomainAdminCreds -CloudCredential `$eidGlobalAdminCreds" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 	writeLog -dataToLog "    REMARK: Make sure the 'KeyVersion' value matches the 'CloudKeyVersion' value and the 'KeyUpdatedOn' value matches the 'CloudKeyUpdatedOn' value!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 }
@@ -9336,7 +8892,6 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
-		#BREAK
 		EXIT
 	}
 }
@@ -9389,7 +8944,6 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
-		#BREAK
 		EXIT
 	}
 
@@ -9520,7 +9074,6 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
-		#BREAK
 		EXIT
 	}
 
@@ -9657,99 +9210,93 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 		# Only For Mode 7 To Make Sure The Required Security Option And Audit Setting Are Configured
 		If ($modeOfOperationNr -eq 7) {
 			# Required Security Option
-			$requiredSecurityOptionAdvAudit = "Audit: Force Audit Policy Subcategory Settings (Windows Vista Or Later) To Override Audit Policy Category Settings|MACHINE\System\CurrentControlSet\Control\Lsa\SCENoApplyLegacyAuditPolicy"
+			$requiredSecurityOptionAdvAudit = "Audit: Force Audit Policy Subcategory Settings (Windows Vista Or Later) To Override Audit Policy Category Settings|MACHINE\System\CurrentControlSet\Control\Lsa\SCENoApplyLegacyAuditPolicy|1"
 
 			# Required Advanced Auditing Settings
 			$requiredAdvAuditSettings = "Audit Kerberos Service Ticket Operations|{0cce9240-69ae-11d9-bed3-505054503030}|Success|1"
 
+			writeLog -dataToLog ""
+			writeLog -dataToLog "Checking If Required Security Option And Required Advanced Auditing Setting Are Being Used By DCs In AD Domain '$($script:targetedADdomainFQDN)' By Executing RSoP..."
+			writeLog -dataToLog "  > Required Security Option.(Enabled = 1).: '$($requiredSecurityOptionAdvAudit.Split('|')[0])' = $($requiredSecurityOptionAdvAudit.Split('|')[2])"
+			writeLog -dataToLog "  > Required Advanced Auditing Setting.....: '$($requiredAdvAuditSettings.Split('|')[0])' (For At Least '$($requiredAdvAuditSettings.Split('|')[2])')"
+			writeLog -dataToLog ""
 			Try {
-				writeLog -dataToLog ""
-				writeLog -dataToLog "Checking If The Required Security Option And The Required Advanced Auditing Setting Are Being Used By DCs In The AD Domain '$($script:targetedADdomainFQDN)' By Executing A RSoP..."
-				writeLog -dataToLog "  > Required Security Option..........: '$($requiredSecurityOptionAdvAudit.Split('|')[0])'"
-				writeLog -dataToLog "  > Required Advanced Auditing Setting: '$($requiredAdvAuditSettings.Split('|')[0])'"
-
 				# Execute An RSoP Against The Nearest RWDC In The Targeted AD Domain To Determine The Result Settings And The GPO(s) That Provided The Final Setting
 				# Get The List Of GPOs That Were Processed For RSoP So We Can Map The GUID Back To Show Which GPO Won
 				# Determine If The Required Security Option Is Already Being Used Or Not, And If The Required Advanced Audit Setting Is Already In Use For At Least Success
 				If ($localADforest -eq $true) {
-					# First Force A GP Update On The Local RWDC To Make Sure All Current Stuff Is Applied
-					Invoke-GPUpdate -RandomDelayInMinutes 0 -Force
+					# First Force A GP Update On The Nearest RWDC To Make Sure All Current Stuff Is Applied
+					Invoke-GPUpdate -Computer $($script:targetedADdomainNearestRWDCFQDN) -RandomDelayInMinutes 0 -Force
 					Start-Sleep -s 10
 
-					# Determine The User Account To Use During RSoP
-					$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $($script:targetedADdomainNearestRWDCFQDN) -targetedADdomainDomainSID $($script:targetedADdomainDomainSID)
-					If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
+					If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNDETERMINED_ACCOUNT_FOR_RSOP_UNKNOWN_ERROR" -Or $accountToChooseForRSoP -eq "UNDETERMINED_ACCOUNT_FOR_RSOP_FAILED_CONNECTION") {
 						$isRequiredSecurityOptionEnabled = $false
 						$isRequiredAdvancedAuditSettingsEnabled = $false
-						writeLog -dataToLog "  --> No Valid Account Could Be Found To Execute RSoP..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "No Valid Account Could Be Found To Execute RSoP..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 						writeLog -dataToLog ""
 					} Else {
 						# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
-						Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
+						Try {
+							$gpRSoPAuditFilePath = "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
+							Get-GPResultantSetOfPolicy -Computer $($script:targetedADdomainNearestRWDCFQDN) -User $accountToChooseForRSoP -ReportType xml -Path $gpRSoPAuditFilePath -ErrorAction STOP > $null
+						} Catch {
+							# PLACEHOLDER
+						}
 
 						# Determine If The Required Security Option Is Configured And If The Required Advanced Auditing Setting Is Configured As Needed
-						If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml") {
-							[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$($script:targetedADdomainFQDN)`_$($script:targetedADdomainNearestRWDCFQDN)`_$execDateTimeCustom.xml"
-							$gpoList = @{}
-							$gpoList["NONE"] = "NONE_AVAILABLE"
-							(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object { $gpoList.Add($_.Path.Identifier."#text", $_.Name) }
-							$rsopSecurityOptions = ((Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension | Where-Object { Get-Member -InputObject $_ -Name SecurityOptions }).SecurityOptions | Where-Object { Get-Member -InputObject $_ -Name KeyName }
-							$gpoWithRequiredSecurityOptionGpoGuid = $null
-							If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) })))) {
-								$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
-								$isRequiredSecurityOptionEnabled = $true
-							} Else {
-								$gpoWithRequiredSecurityOptionGpoGuid = "NONE"
-								$isRequiredSecurityOptionEnabled = $false
+						If (Test-Path $gpRSoPAuditFilePath) {
+							[xml]$gpRSoPxml = Get-Content $gpRSoPAuditFilePath
+							$gpoList, $gpoWithRequiredSecurityOptionGpoGuid, $isRequiredSecurityOptionEnabled, $gpoWithRequiredAdvancedAuditSettingsGpoGuid, $isRequiredAdvancedAuditSettingsEnabled = determineAdvancedAuditingSecuritySettings -gpRSoPxml $gpRSoPxml -requiredSecurityOptionAdvAudit $requiredSecurityOptionAdvAudit -requiredAdvAuditSettings $requiredAdvAuditSettings
+
+							Try {
+								Remove-Item $gpRSoPAuditFilePath -Force -ErrorAction STOP
+							} Catch {
+								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "Error Removing The RSoP File '$gpRSoPAuditFilePath'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeExceptionLogError -exceptionRecord $($_)
 							}
-							writeLog -dataToLog "  --> Current GPO With Required Security Option: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+
 							writeLog -dataToLog ""
-							$rsopAdvancedAuditSettings = ((Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension | Where-Object { Get-Member -InputObject $_ -Name AuditSetting }).AuditSetting
-							$gpoWithRequiredAdvancedAuditSettingsGpoGuid = $null
-							If (-not ([string]::IsNullOrEmpty($($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) })))) {
-								If ($(($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).SettingValue -band $($requiredAdvAuditSettings.Split("|")[3])) -eq $($requiredAdvAuditSettings.Split("|")[3])) {
-									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = ($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).GPO.Identifier.'#text'
-									$isRequiredAdvancedAuditSettingsEnabled = $true
-								} Else {
-									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
-									$isRequiredAdvancedAuditSettingsEnabled = $false
-								}
-							} Else {
-								$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
-								$isRequiredAdvancedAuditSettingsEnabled = $false
-							}
-							writeLog -dataToLog "  --> Current GPO With Required Advanced Auditing Setting: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+							writeLog -dataToLog "Current GPO With Required Security Option.............: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+							writeLog -dataToLog ""
+							writeLog -dataToLog "Current GPO With Required Advanced Auditing Setting...: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 							writeLog -dataToLog ""
 						} Else {
 							$isRequiredSecurityOptionEnabled = $false
 							$isRequiredAdvancedAuditSettingsEnabled = $false
-							writeLog -dataToLog "  --> The Execution Of The RSoP Failed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							writeLog -dataToLog "The Execution Of The RSoP Failed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 							writeLog -dataToLog ""
 						}
+						$gpRSoPAuditFilePath = $null
 					}
 				}
 				If ($localADforest -eq $false) {
 					If ([string]::IsNullOrEmpty($adminCrds)) {
-						$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -ErrorAction Stop
+						$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -ErrorAction STOP
 					} Else {
-						$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -Credential $adminCrds -ErrorAction Stop
+						$targetedServerSession = New-PSSession -ComputerName $($script:targetedADdomainNearestRWDCFQDN) -Credential $adminCrds -ErrorAction STOP
 					}
-					$isRequiredSecurityOptionEnabled, $isRequiredAdvancedAuditSettingsEnabled = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainNearestRWDCFQDN), $($script:targetedADdomainFQDN), $($script:targetedADdomainDomainSID), $execDateTimeCustom, $requiredSecurityOptionAdvAudit, $requiredAdvAuditSettings, $loggingDef, $loadPoSHModulesDef, $determineUserAccountForRSoPDef -ScriptBlock {
+
+					# Connect To The Remote DC To Execute The RSoP And Determine The Settings
+					$gpoList, $gpoWithRequiredSecurityOptionGpoGuid, $isRequiredSecurityOptionEnabled, $gpoWithRequiredAdvancedAuditSettingsGpoGuid, $isRequiredAdvancedAuditSettingsEnable, $scriptErrorMessage = Invoke-Command -Session $targetedServerSession -ArgumentList $($script:targetedADdomainFQDN), $($script:targetedADdomainNearestRWDCFQDN), $execDateTimeCustom, $accountToChooseForRSoP, $requiredSecurityOptionAdvAudit, $requiredAdvAuditSettings, $writeLogDef, $loadPoSHModulesDef, $determineAdvancedAuditingSecuritySettingsDef, $writeExceptionLogErrorDef -ScriptBlock {
+						[CmdletBinding()]
 						Param (
-							$targetedADdomainNearestRWDCFQDN,
 							$targetedADdomainFQDN,
-							$targetedADdomainDomainSID,
+							$targetedADdomainNearestRWDCFQDN,
 							$execDateTimeCustom,
+							$accountToChooseForRSoP,
 							$requiredSecurityOptionAdvAudit,
 							$requiredAdvAuditSettings,
-							$loggingDef,
+							$writeLogDef,
 							$loadPoSHModulesDef,
-							$determineUserAccountForRSoPDef
+							$determineAdvancedAuditingSecuritySettingsDef
 						)
 
-						. ([ScriptBlock]::Create($loggingDef))
+						. ([ScriptBlock]::Create($writeLogDef))
 						. ([ScriptBlock]::Create($loadPoSHModulesDef))
-						. ([ScriptBlock]::Create($determineUserAccountForRSoPDef))
+						. ([ScriptBlock]::Create($determineAdvancedAuditingSecuritySettingsDef))
+
+						$scriptErrorMessage = $null
 
 						"GroupPolicy" | ForEach-Object {
 							$poshModuleState = $null
@@ -9757,106 +9304,109 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 							If ($poshModuleState -eq "NotAvailable") {
 								BREAK
 							}
+							writeLog -dataToLog "" -ignoreRemote $true
 						}
 
 						If ($poshModuleState -eq "HasBeenLoaded" -Or $poshModuleState -eq "AlreadyLoaded") {
 							# First Force A GP Update On The Local RWDC To Make Sure All Current Stuff Is Applied
-							Invoke-GPUpdate -RandomDelayInMinutes 0 -Force
+							Invoke-GPUpdate -Computer $targetedADdomainNearestRWDCFQDN -RandomDelayInMinutes 0 -Force
 							Start-Sleep -s 10
 
-							# Determine The User Account To Use During RSoP
-							$accountToChooseForRSoP = determineUserAccountForRSoP -targetedADdomainRWDCFQDN $targetedADdomainNearestRWDCFQDN -targetedADdomainDomainSID $targetedADdomainDomainSID
-							If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP") {
+							If ($accountToChooseForRSoP -eq "NO_CANDIDATE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "NO_PROFILE_SIDS_AVAILABLE_FOR_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNABLE_TO_DETERMINE_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNRESOLVABLE_SID_TO_ACCOUNT_FOR_RSOP" -Or $accountToChooseForRSoP -eq "UNDETERMINED_ACCOUNT_FOR_RSOP_UNKNOWN_ERROR" -Or $accountToChooseForRSoP -eq "UNDETERMINED_ACCOUNT_FOR_RSOP_FAILED_CONNECTION") {
+								$gpoList = @{}
+								$gpoList["UNDETERMINED"] = $accountToChooseForRSoP
+								$gpoWithRequiredSecurityOptionGpoGuid = "UNDETERMINED"
 								$isRequiredSecurityOptionEnabled = $false
+								$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "UNDETERMINED"
 								$isRequiredAdvancedAuditSettingsEnabled = $false
-								writeLog -dataToLog "  --> No Valid Account Could Be Found To Execute RSoP..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog ""
+								$scriptErrorMessage = "No Valid Account Could Be Found To Execute RSoP..."
 							} Else {
 								# Run An RsOP To Determine In Which GPO, If Applicable, The Required Security Option And Audit Settings Have Been Configured And Which Should Be Used, And Export To XML File
-								Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml" -ErrorAction Stop > $null
+								Try {
+									$gpRSoPAuditFilePath = "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
+									Get-GPResultantSetOfPolicy -Computer $targetedADdomainNearestRWDCFQDN -User $accountToChooseForRSoP -ReportType xml -Path $gpRSoPAuditFilePath -ErrorAction STOP > $null
+								} Catch {
+									# PLACEHOLDER
+								}
 
 								# Determine If The Required Security Option Is Configured And If The Required Advanced Auditing Setting Is Configured As Needed
-								If (Test-Path "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml") {
-									[xml]$gpRSoPxml = Get-Content "$($ENV:WINDIR + '\TEMP')\gpRSoP_Audit_$targetedADdomainFQDN`_$targetedADdomainNearestRWDCFQDN`_$execDateTimeCustom.xml"
-									$gpoList = @{}
-									$gpoList["NONE"] = "NONE_AVAILABLE"
-									(Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.GPO | ForEach-Object { $gpoList.Add($_.Path.Identifier."#text", $_.Name) }
-									$rsopSecurityOptions = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension.SecurityOptions
-									$gpoWithRequiredSecurityOptionGpoGuid = $null
-									If (-not ([string]::IsNullOrEmpty($($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) })))) {
-										$gpoWithRequiredSecurityOptionGpoGuid = ($rsopSecurityOptions | Where-Object { $_.KeyName -eq $($requiredSecurityOptionAdvAudit.Split("|")[1]) }).GPO.Identifier.'#text'
-										$isRequiredSecurityOptionEnabled = $true
-									} Else {
-										$gpoWithRequiredSecurityOptionGpoGuid = "NONE"
-										$isRequiredSecurityOptionEnabled = $false
+								If (Test-Path $gpRSoPAuditFilePath) {
+									[xml]$gpRSoPxml = Get-Content $gpRSoPAuditFilePath
+									$gpoList, $gpoWithRequiredSecurityOptionGpoGuid, $isRequiredSecurityOptionEnabled, $gpoWithRequiredAdvancedAuditSettingsGpoGuid, $isRequiredAdvancedAuditSettingsEnabled = determineAdvancedAuditingSecuritySettings -gpRSoPxml $gpRSoPxml -requiredSecurityOptionAdvAudit $requiredSecurityOptionAdvAudit -requiredAdvAuditSettings $requiredAdvAuditSettings
+
+									Try {
+										Remove-Item $gpRSoPAuditFilePath -Force -ErrorAction STOP
+									} Catch {
+										$scriptErrorMessage = "Error Removing The RSoP File '$gpRSoPAuditFilePath'..."
 									}
-									writeLog -dataToLog "  --> Current GPO With Required Security Option: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog ""
-									$rsopAdvancedAuditSettings = (Select-Xml -xml $gpRSoPxml -XPath '/rsop:Rsop' -Namespace @{rsop = "http://www.microsoft.com/GroupPolicy/Rsop" }).Node.ComputerResults.ExtensionData.Extension.AuditSetting
-									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = $null
-									If (-not ([string]::IsNullOrEmpty($($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) })))) {
-										If ($(($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).SettingValue -band $($requiredAdvAuditSettings.Split("|")[3])) -eq $($requiredAdvAuditSettings.Split("|")[3])) {
-											$gpoWithRequiredAdvancedAuditSettingsGpoGuid = ($rsopAdvancedAuditSettings | Where-Object { $_.SubcategoryName -eq $($requiredAdvAuditSettings.Split("|")[0]) }).GPO.Identifier.'#text'
-											$isRequiredAdvancedAuditSettingsEnabled = $true
-										} Else {
-											$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
-											$isRequiredAdvancedAuditSettingsEnabled = $false
-										}
-									} Else {
-										$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "NONE"
-										$isRequiredAdvancedAuditSettingsEnabled = $false
-									}
-									writeLog -dataToLog "  --> Current GPO With Required Advanced Auditing Setting: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog ""
 								} Else {
+									$gpoList = @{}
+									$gpoList["UNDETERMINED"] = "GPO_NOT_DETERMINED_RSoP_FAILED"
+									$gpoWithRequiredSecurityOptionGpoGuid = "UNDETERMINED"
 									$isRequiredSecurityOptionEnabled = $false
+									$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "UNDETERMINED"
 									$isRequiredAdvancedAuditSettingsEnabled = $false
-									writeLog -dataToLog "  --> The Execution Of The RSoP Failed..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog ""
+									$scriptErrorMessage = "The Execution Of The RSoP Failed..."
 								}
 							}
 						} Else {
+							$gpoList = @{}
+							$gpoList["UNDETERMINED"] = "GPO_NOT_DETERMINED_RSoP_FAILED"
+							$gpoWithRequiredSecurityOptionGpoGuid = "UNDETERMINED"
 							$isRequiredSecurityOptionEnabled = $false
+							$gpoWithRequiredAdvancedAuditSettingsGpoGuid = "UNDETERMINED"
 							$isRequiredAdvancedAuditSettingsEnabled = $false
-							writeLog -dataToLog "  --> The Execution Of The RSoP Cannot Be Done Due To Missing GPO PowerShell Module..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-							writeLog -dataToLog ""
+							$scriptErrorMessage = "The Execution Of The RSoP Cannot Be Done Due To Missing GPO PowerShell Module..."
 						}
-						Return $isRequiredSecurityOptionEnabled, $isRequiredAdvancedAuditSettingsEnabled
+						Return $gpoList, $gpoWithRequiredSecurityOptionGpoGuid, $isRequiredSecurityOptionEnabled, $gpoWithRequiredAdvancedAuditSettingsGpoGuid, $isRequiredAdvancedAuditSettingsEnable, $scriptErrorMessage
 					}
 					Remove-PSSession $targetedServerSession
+
+					If (-not $([string]::IsNullOrEmpty($scriptErrorMessage))) {
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog $scriptErrorMessage -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+						$scriptErrorMessage = $null
+					}
+
+					If ($gpoList.Keys -notcontains "UNDETERMINED") {
+						writeLog -dataToLog ""
+						writeLog -dataToLog "Current GPO With Required Security Option.............: '$($gpoList[$gpoWithRequiredSecurityOptionGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog ""
+						writeLog -dataToLog "Current GPO With Required Advanced Auditing Setting...: '$($gpoList[$gpoWithRequiredAdvancedAuditSettingsGpoGuid])'..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+						writeLog -dataToLog ""
+					}
 				}
 				If ($isRequiredSecurityOptionEnabled -eq $true -And $isRequiredAdvancedAuditSettingsEnabled -eq $true) {
 					# If Both The Required Security Option And The Required Advanced Auditing Setting Are In Place, Continue
 					writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Both The Required Security Option And The Required Advanced Auditing Setting Are In Use By DCs In The AD Domain '$($script:targetedADdomainFQDN)'!" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Both Required Security Option And Required Advanced Auditing Setting Are In Use By DCs In AD Domain '$($script:targetedADdomainFQDN)'!" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "Continuing Script..." -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "SUCCESS" -logFileOnly $false -noDateTimeInLogLine $false
 				} Else {
 					# If Both/Either The Required Security Option And/Or The Required Advanced Auditing Setting Are NOT In Place, Abort
 					writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Both/Either The Required Security Option And/Or The Required Advanced Auditing Setting Are NOT In Use By DCs In The AD Domain '$($script:targetedADdomainFQDN)', Or RSoP Failed Due To Not Being Able To Find An Account!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Both/Either Required Security Option And/Or Required Advanced Auditing Setting Are NOT In Use By DCs In AD Domain '$($script:targetedADdomainFQDN)'" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "OR" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "RSoP Failed Due To Not Being Able To Find An Account!" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
-					writeLog -dataToLog "Please Re-Run The Script AFTER Configuring The Required Security Option And/Or The Required Advanced Auditing Setting In A GPO That Targets All DCs In The AD Domain '$($script:targetedADdomainFQDN)', Or Make Sure A Valid Account Exists On The '$targetedADdomainNearestRWDCFQDN'..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Please Re-Run The Script AFTER Updating A GPO That Targets All DCs In The AD Domain '$($script:targetedADdomainFQDN)' With:" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "  > The Required Security Option And/Or" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "  > The Required Advanced Auditing Setting" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "OR" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Make Sure A Valid Account Exists On The '$targetedADdomainNearestRWDCFQDN' For The RSoP To Succeed!..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "Aborting Script..." -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 					writeLog -dataToLog "" -lineType "WARNING" -logFileOnly $false -noDateTimeInLogLine $false
 
-					#BREAK
 					EXIT
 				}
 			} Catch {
 				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error Checking If The Required Security Option And The Required Advanced Auditing Setting Are Being Used By DCs In The AD Domain '$($script:targetedADdomainFQDN)' Through Executing A RSoP..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog "Error Checking If Required Security Option And Required Advanced Auditing Setting Are Being Used By DCs In AD Domain '$($script:targetedADdomainFQDN)' Through Executing RSoP..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+				writeExceptionLogError -exceptionRecord $($_)
 
-				#BREAK
 				EXIT
 			}
 		}
@@ -9882,7 +9432,8 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 				$filteredSecurityEventsKerbSvcTicketOps = [System.Collections.Generic.List[Object]]::New()
 
 				writeLog -dataToLog ""
-				writeLog -dataToLog "  ============= CURRENT Date/Time: ($(Get-Date -format 'yyyy-MM-dd HH:mm:ss')) ============= Run: '$runNr' ============= STOPS After: $(Get-Date $($execDateTime.AddSeconds([int]$goldenTicketMonitoringPeriod)) -format 'yyyy-MM-dd HH:mm:ss') ============="
+				#writeLog -dataToLog "  ============= CURRENT Date/Time: ($(Get-Date -format 'yyyy-MM-dd HH:mm:ss')) ============= Run: '$runNr' ============= STOPS After: $(Get-Date $($execDateTime.AddSeconds([int]$goldenTicketMonitoringPeriod)) -format 'yyyy-MM-dd HH:mm:ss') ============="
+				writeLog -dataToLog "  === CURRENT Date/Time: ($(Get-Date -format 'yyyy-MM-dd HH:mm:ss')) === Wait Interval: $goldenTicketMonitorWaitingIntervalBetweenRuns Seconds === STOPS After: $(Get-Date $($execDateTime.AddSeconds([int]$goldenTicketMonitoringPeriod)) -format 'yyyy-MM-dd HH:mm:ss') === Run: '$runNr'"
 				writeLog -dataToLog ""
 			}
 
@@ -9902,38 +9453,16 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 
 				# Retrieve The KrbTgt Account Object DN
 				$krbTgtObjectDN = $null
-				If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-					Try {
-						$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-						$krbTgtObjectDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))").DistinguishedName
+				Try {
+					$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
+					$krbTgtObjectDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))").DistinguishedName
+				} Catch {
+					writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+					writeExceptionLogError -exceptionRecord $($_)
+				} Finally {
+					If ($null -ne $ldapConnection) {
 						$ldapConnection.Dispose()
-					} Catch {
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-					}
-				}
-				If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-					Try {
-						$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-						$krbTgtObjectDN = (Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))").DistinguishedName
-						$ldapConnection.Dispose()
-					} Catch {
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$krbTgtSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-						writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 					}
 				}
 
@@ -9965,26 +9494,16 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 						If ($targetedADdomainDCToProcessReachability -eq $false -Or $targetedADdomainSourceRWDCFQDN -eq "RODC Unreachable" -Or $targetedADdomainSourceRWDCFQDN -eq "Unknown") {
 							Try {
 								$targetedADdomainSourceRWDCFQDN = ($tableOfDCsInADDomain | Where-Object { $_.PDC -eq $true })."Host Name"
-								If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-									$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos
-									$dcToProcess."Source RWDC DSA" = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$targetedADdomainSourceRWDCFQDN))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
-									$ldapConnection.Dispose()
-								}
-								If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-									$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-									$dcToProcess."Source RWDC DSA" = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$targetedADdomainSourceRWDCFQDN))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
-									$ldapConnection.Dispose()
-								}
+								$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainSourceRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+								$dcToProcess."Source RWDC DSA" = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$targetedADdomainSourceRWDCFQDN))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
 							} Catch {
 								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 								writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For The Source RWDC DSA 'dNSHostName=$targetedADdomainSourceRWDCFQDN'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeExceptionLogError -exceptionRecord $($_)
+							} Finally {
+								If ($null -ne $ldapConnection) {
+									$ldapConnection.Dispose()
+								}
 							}
 						} Else {
 							Try {
@@ -9992,27 +9511,17 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 								$targetedADdomainSourceRWDCReachability = ($tableOfDCsInADDomain | Where-Object { $_."Host Name" -eq $targetedADdomainSourceRWDCFQDN }).Reachable
 								If ($targetedADdomainSourceRWDCReachability -eq $false) {
 									$targetedADdomainSourceRWDCFQDN = ($tableOfDCsInADDomain | Where-Object { $_.PDC -eq $true })."Host Name"
-									If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-										$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos
-										$dcToProcess."Source RWDC DSA" = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$targetedADdomainSourceRWDCFQDN))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
-										$ldapConnection.Dispose()
-									}
-									If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-										$ldapConnection = Get-LdapConnection -LdapServer:$targetedADdomainSourceRWDCFQDN -EncryptionType Kerberos -Credential $adminCrds
-										$dcToProcess."Source RWDC DSA" = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$targetedADdomainSourceRWDCFQDN))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
-										$ldapConnection.Dispose()
-									}
+									$ldapConnection = setupLdapConnection -ldapServerFQDN $targetedADdomainSourceRWDCFQDN -localADforest $localADforest -adminCrds $adminCrds
+									$dcToProcess."Source RWDC DSA" = "CN=NTDS Settings," + $((Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADforestSitesContainerDN) -searchFilter "(&(objectClass=server)(dNSHostName=$targetedADdomainSourceRWDCFQDN))" -PropertiesToLoad @("distinguishedName")).distinguishedName)
 								}
 							} Catch {
 								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 								writeLog -dataToLog "Error Querying AD Against '$targetedADdomainSourceRWDCFQDN' For The Source RWDC DSA 'dNSHostName=$targetedADdomainSourceRWDCFQDN' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeExceptionLogError -exceptionRecord $($_)
+							} Finally {
+								If ($null -ne $ldapConnection) {
+									$ldapConnection.Dispose()
+								}
 							}
 						}
 					}
@@ -10042,7 +9551,6 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 									sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 								}
 
-								#BREAK
 								EXIT
 							}
 						}
@@ -10053,47 +9561,20 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 						# If Mode 6, Do A Real Password Reset Of PROD/REAL KrbTgt Accounts (Password Reset!)
 						If ($modeOfOperationNr -eq 3 -Or $modeOfOperationNr -eq 4 -Or $modeOfOperationNr -eq 5 -Or $modeOfOperationNr -eq 6) {
 							# Retrieve The KrbTgt Account Object
-							If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-								Try {
-									$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos
-									If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") {
-										$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset", $($script:resetRoutineAttributeForResetDateAction1), $($script:resetRoutineAttributeForResetDateAction2), $($script:resetRoutineAttributeForResetState))
-									} Else {
-										$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
-									}
-									$ldapConnection.Dispose()
-								} Catch {
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							Try {
+								$ldapConnection = setupLdapConnection -ldapServerFQDN $($script:targetedADdomainNearestRWDCFQDN) -localADforest $localADforest -adminCrds $adminCrds
+								If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") {
+									$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset", $($script:resetRoutineAttributeForResetDateAction1), $($script:resetRoutineAttributeForResetDateAction2), $($script:resetRoutineAttributeForResetState))
+								} Else {
+									$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $($script:targetedADdomainDefaultNCDN) -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
 								}
-							}
-							If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-								Try {
-									$ldapConnection = Get-LdapConnection -LdapServer:$($script:targetedADdomainNearestRWDCFQDN) -EncryptionType Kerberos -Credential $adminCrds
-									$targetSearchBase = (Get-RootDSE -LdapConnection $ldapConnection).defaultNamingContext.distinguishedName
-									If ($execResetRoutine -And $($script:resetRoutineEnabled).ToUpper() -eq "TRUE") {
-										$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset", $($script:resetRoutineAttributeForResetDateAction1), $($script:resetRoutineAttributeForResetDateAction2), $($script:resetRoutineAttributeForResetState))
-									} Else {
-										$targetObjectToCheck = Find-LdapObject -LdapConnection $ldapConnection -searchBase $targetSearchBase -searchFilter "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$krbTgtSamAccountName))" -PropertiesToLoad @("pwdlastset")
-									}
+							} Catch {
+								writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$krbTgtSamAccountName'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+								writeExceptionLogError -exceptionRecord $($_)
+							} Finally {
+								If ($null -ne $ldapConnection) {
 									$ldapConnection.Dispose()
-								} Catch {
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error Querying AD Against '$($script:targetedADdomainNearestRWDCFQDN)' For User Object With 'sAMAccountName=$krbTgtSamAccountName' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
 								}
 							}
 
@@ -10250,7 +9731,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 										}
 										writeLog -dataToLog "  --> Chosen: $continueOrStop" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 										writeLog -dataToLog ""
-										
+
 										If ($continueOrStop.ToUpper() -eq "STOP") {
 											BREAK
 										}
@@ -10273,47 +9754,47 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 												$anomaly = "State Has A Value ('$targetObjectToCheckPwdResetRoutineStateFromAD') While Either Or Both Action 1 Date ('$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD') And/Or Action 2 Date ('$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD') Has No Value!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Password Reset Routine Action 1 Date IS NOT EMPTY, And Either/Both Password Reset Routine State And/or Password Reset Routine Action 2 Date IS/ARE EMPTY
+												# ANOMALY - Password Reset Routine Action 1 Date IS NOT EMPTY, And Either/Both Password Reset Routine State And/or Password Reset Routine Action 2 Date IS/ARE EMPTY
 											} ElseIf (-not [string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD) -And ([string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutineStateFromAD) -Or [string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD))) {
 												$anomaly = "Action 1 Date ('$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD') Has A Value, While Either Or Both State ('$targetObjectToCheckPwdResetRoutineStateFromAD') And/Or Action 2 Date ('$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD') Has No Value!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Password Reset Routine Action 2 Date IS NOT EMPTY, And Either/Both Password Reset Routine State And/or Password Reset Routine Action 1 Date IS/ARE EMPTY
+												# ANOMALY - Password Reset Routine Action 2 Date IS NOT EMPTY, And Either/Both Password Reset Routine State And/or Password Reset Routine Action 1 Date IS/ARE EMPTY
 											} ElseIf (-not [string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD) -And ([string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutineStateFromAD) -Or [string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD))) {
 												$anomaly = "Action 2 Date ('$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD') Has A Value, While Either Or Both State ('$targetObjectToCheckPwdResetRoutineStateFromAD') And/Or Action 1 Date ('$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD') Has No Value!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Both Password Reset Routine Action 1 Date And Password Reset Routine Action 2 Date ARE NOT Empty, But Password Reset Routine Action 2 Date Is Before/Equal Password Reset Routine Action 1 Date
+												# ANOMALY - Both Password Reset Routine Action 1 Date And Password Reset Routine Action 2 Date ARE NOT Empty, But Password Reset Routine Action 2 Date Is Before/Equal Password Reset Routine Action 1 Date
 											} ElseIf (-not [string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD) -And -not [string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD) -And [int64]$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD -le [int64]$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD) {
 												$anomaly = "Action 2 Date ('$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD') Is Before Action 1 Date ('$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD'), And Not After Action 1 Date!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Password Reset Routine State IS NOT EMPTY, And Password Reset Routine State DOES NOT Equal Either 0/1/2
+												# ANOMALY - Password Reset Routine State IS NOT EMPTY, And Password Reset Routine State DOES NOT Equal Either 0/1/2
 											} ElseIf (-not [string]::IsNullOrEmpty($targetObjectToCheckPwdResetRoutineStateFromAD) -And $targetObjectToCheckPwdResetRoutineStateFromAD -ne "0" -And $targetObjectToCheckPwdResetRoutineStateFromAD -ne "1" -And $targetObjectToCheckPwdResetRoutineStateFromAD -ne "2") {
 												$anomaly = "State Has A Value ('$targetObjectToCheckPwdResetRoutineStateFromAD'), But The Value Is Invalid!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Password Reset Routine State Is Either 0/1/2, And Either/Both Password Reset Routine Action 1 Date And/Or Password Reset Routine Action 2 Date DOES NOT Match The Required Value Structure Of yyyyMMddHHmmss
+												# ANOMALY - Password Reset Routine State Is Either 0/1/2, And Either/Both Password Reset Routine Action 1 Date And/Or Password Reset Routine Action 2 Date DOES NOT Match The Required Value Structure Of yyyyMMddHHmmss
 											} ElseIf (($targetObjectToCheckPwdResetRoutineStateFromAD -eq "0" -Or $targetObjectToCheckPwdResetRoutineStateFromAD -eq "1" -Or $targetObjectToCheckPwdResetRoutineStateFromAD -eq "2") -And ($targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD -notmatch "^(20)\d{2}(0[1-9]|1[0,1,2])(0[1-9]|[12][0-9]|3[01])([01][0-9]|[2][0-3])([012345][0-9])([012345][0-9])$" -Or $targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD -notmatch "^(20)\d{2}(0[1-9]|1[0,1,2])(0[1-9]|[12][0-9]|3[01])([01][0-9]|[2][0-3])([012345][0-9])([012345][0-9])$")) {
 												$anomaly = "Normal State Value ('$targetObjectToCheckPwdResetRoutineStateFromAD') While Either Or Both Action Dates ('$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD') ('$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD') Not Matching Required Structure!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Password Reset Routine State Is 0, And Execution Date/Time IS NOT Before Password Reset Routine Action 2 Date
+												# ANOMALY - Password Reset Routine State Is 0, And Execution Date/Time IS NOT Before Password Reset Routine Action 2 Date
 											} ElseIf ($targetObjectToCheckPwdResetRoutineStateFromAD -eq "0" -And -not ([int64]$($execDateTime.ToString("yyyyMMddHHmmss")) -lt [int64]$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD)) {
 												$anomaly = "State Value ('$targetObjectToCheckPwdResetRoutineStateFromAD') While Execution Date/time! ('$($execDateTime.ToString("yyyyMMddHHmmss"))') IS NOT Before Action 2 Date ('$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD')!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Password Reset Routine State Is 1, And Execution Date/Time IS NOT After Password Reset Routine Action 1 Date
+												# ANOMALY - Password Reset Routine State Is 1, And Execution Date/Time IS NOT After Password Reset Routine Action 1 Date
 											} ElseIf ($targetObjectToCheckPwdResetRoutineStateFromAD -eq "1" -And -not ([int64]$($execDateTime.ToString("yyyyMMddHHmmss")) -gt [int64]$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD)) {
 												$anomaly = "State Value ('$targetObjectToCheckPwdResetRoutineStateFromAD') While Execution Date/time! ('$($execDateTime.ToString("yyyyMMddHHmmss"))') IS NOT After Action 1 Date ('$targetObjectToCheckPwdResetRoutine1stResetDateDecimalFromAD')!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# ANOMALY - Password Reset Routine State Is 2, And Execution Date/Time IS NOT After Password Reset Routine Action 2 Date
+												# ANOMALY - Password Reset Routine State Is 2, And Execution Date/Time IS NOT After Password Reset Routine Action 2 Date
 											} ElseIf ($targetObjectToCheckPwdResetRoutineStateFromAD -eq "2" -And -not ([int64]$($execDateTime.ToString("yyyyMMddHHmmss")) -gt [int64]$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD)) {
 												$anomaly = "State Value ('$targetObjectToCheckPwdResetRoutineStateFromAD') While Execution Date/time! ('$($execDateTime.ToString("yyyyMMddHHmmss"))') IS NOT After Action 2 Date ('$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalFromAD')!"
 												$resetToInitialStateDueToAnomaly = $true
 
-											# When NO ANOMALY HAS BEEN BEEN DETECTED!
+												# When NO ANOMALY HAS BEEN BEEN DETECTED!
 											} Else {
 												$resetToInitialStateDueToAnomaly = $false
 
@@ -10337,7 +9818,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 													writeLog -dataToLog "  --> Reset Routine State (Set 2 AD)........: '0'"
 													writeLog -dataToLog "  --> Reset Routine Action 1 Date (Set 2 AD): '$targetObjectToCheckPwdResetRoutine1stResetDateDecimalToAD' ($([DateTime]::ParseExact($targetObjectToCheckPwdResetRoutine1stResetDateDecimalToAD, "yyyyMMddHHmmss", $null).ToString("yyyy-MM-dd HH:mm:ss")))"
 													writeLog -dataToLog "  --> Reset Routine Action 2 Date (Set 2 AD): '$targetObjectToCheckPwdResetRoutine2ndResetDateDecimalToAD' ($([DateTime]::ParseExact($targetObjectToCheckPwdResetRoutine2ndResetDateDecimalToAD, "yyyyMMddHHmmss", $null).ToString("yyyy-MM-dd HH:mm:ss")))"
-													writeLog -dataToLog "  --> Reset Routine Password Is Reset.......: 'FALSE'"													
+													writeLog -dataToLog "  --> Reset Routine Password Is Reset.......: 'FALSE'"
 													writeLog -dataToLog ""
 													$script:numAccntsResetCandidateNO += 1
 												}
@@ -10498,7 +9979,7 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 
 					# Start Date/Time Event query
 					If ($runNr -eq 1) {
-						$collectionOfDCsToProcess | Where-Object { $_."Host Name" -eq $dcToProcess."Host Name" } | Add-Member -MemberType NoteProperty -Name "NextStartDateTimeEventQuery" -Value $(Get-Date $krbTgtPwdLastSet)
+						($collectionOfDCsToProcess | Where-Object { $_."Host Name" -eq $dcToProcess."Host Name" }).PSObject.Properties.Add([System.Management.Automation.PSNoteProperty]::new("NextStartDateTimeEventQuery", $(Get-Date $krbTgtPwdLastSet)))
 					}
 					$startDateTimeEventQuery = ($collectionOfDCsToProcess | Where-Object { $_."Host Name" -eq $dcToProcess."Host Name" }).NextStartDateTimeEventQuery
 					$startDateTimeEventQueryString = $(Get-Date $startDateTimeEventQuery -Format "yyyy-MM-dd HH:mm:ss")
@@ -10507,63 +9988,43 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 					$fqdnDC = $dcToProcess."Host Name"
 
 					writeLog -dataToLog "  --> DC '$fqdnDC': Retrieving 'Kerberos Service Ticket Operations' Events (ID 4769) After '$startDateTimeEventQueryString'..."
+
+					($collectionOfDCsToProcess | Where-Object { $_."Host Name" -eq $dcToProcess."Host Name" }).NextStartDateTimeEventQuery = $(Get-Date)
+					# https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4769
+					$securityEventsKerbSvcTicketOps = [System.Collections.Generic.List[Object]]::New()
+					# Retrieve The Security Events With Event ID 4769
 					Try {
-						($collectionOfDCsToProcess | Where-Object { $_."Host Name" -eq $dcToProcess."Host Name" }).NextStartDateTimeEventQuery = $(Get-Date)
-						# https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4769
-						$securityEventsKerbSvcTicketOps = [System.Collections.Generic.List[Object]]::New()
-						# Retrieve The Security Events With Event ID 4769
 						If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
-							Try {
-								Get-WinEvent -ComputerName $fqdnDC -FilterHashtable @{LogName = 'Security'; ID = 4769; StartTime = $startDateTimeEventQuery } -ErrorAction Stop | ForEach-Object {
-									$securityEventsKerbSvcTicketOps.Add($_)
-								}
-							} Catch {
-								If ($_.FullyQualifiedErrorId -match "NoMatchingEventsFound") {
-									# PlaceHolder, Just For NO EVENTS!
-								} Else {
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error Retrieving The Security Events With Event ID 4769 From The DC '$($script:targetedADdomainNearestRWDCFQDN)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								}
+							Get-WinEvent -ComputerName $fqdnDC -FilterHashtable @{LogName = 'Security'; ID = 4769; StartTime = $startDateTimeEventQuery } -ErrorAction STOP | ForEach-Object {
+								$securityEventsKerbSvcTicketOps.Add($_)
 							}
 						}
 						If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
-							Try {
-								Get-WinEvent -ComputerName $fqdnDC -FilterHashtable @{LogName = 'Security'; ID = 4769; StartTime = $startDateTimeEventQuery } -Credential $adminCrds -ErrorAction Stop | ForEach-Object {
-									$securityEventsKerbSvcTicketOps.Add($_)
-								}
-							} Catch {
-								If ($_.FullyQualifiedErrorId -match "NoMatchingEventsFound") {
-									# PlaceHolder, Just For NO EVENTS!
-								} Else {
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error Retrieving The Security Events With Event ID 4769 From The DC '$($script:targetedADdomainNearestRWDCFQDN)' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Type......: $($_.Exception.GetType().FullName)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Exception Message...: $($_.Exception.Message)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "Error On Script Line: $($_.InvocationInfo.ScriptLineNumber)" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-									writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
-								}
+							Get-WinEvent -ComputerName $fqdnDC -FilterHashtable @{LogName = 'Security'; ID = 4769; StartTime = $startDateTimeEventQuery } -Credential $adminCrds -ErrorAction STOP | ForEach-Object {
+								$securityEventsKerbSvcTicketOps.Add($_)
 							}
 						}
-						writeLog -dataToLog "    --> Found '$(($securityEventsKerbSvcTicketOps | Measure-Object).Count)' Security Events For ID 4769 On DC '$fqdnDC' Since Last Reset Date/Time" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 					} Catch {
-						writeLog -dataToLog "    --> Found '$(($securityEventsKerbSvcTicketOps | Measure-Object).Count)' Security Events For ID 4769 On DC '$fqdnDC'" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+						If ($_.FullyQualifiedErrorId -match "NoMatchingEventsFound") {
+							# PlaceHolder, Just For NO EVENTS!
+						} Else {
+							writeLog -dataToLog "" -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							If ($localADforest -eq $true -Or ($localADforest -eq $false -And $([string]::IsNullOrEmpty($adminCrds)))) {
+								writeLog -dataToLog "Error Retrieving The Security Events With Event ID 4769 From The DC '$fqdnDC'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							}
+							If ($localADforest -eq $false -And $(-not $([string]::IsNullOrEmpty($adminCrds)))) {
+								writeLog -dataToLog "Error Retrieving The Security Events With Event ID 4769 From The DC '$fqdnDC' Using '$($adminCrds.UserName)'..." -lineType "ERROR" -logFileOnly $false -noDateTimeInLogLine $false
+							}
+							writeExceptionLogError -exceptionRecord $($_)
+						}
 					}
+					writeLog -dataToLog "    --> Found '$(($securityEventsKerbSvcTicketOps | Measure-Object).Count)' Security Events For ID 4769 On DC '$fqdnDC' Since Last Reset Date/Time" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 
 					# The RecordID Is Basicly Used To NOT Retrieve Events That Were Already Retrieved In A Previous Run Against The Same DC. When It (The Variable) Does NOT Exist, It Is The First Query For That DC, Otherwise Subsequent Query
 					If (($securityEventsKerbSvcTicketOps | Measure-Object).Count -gt 0) {
 						Try {
 							$lastRecordId = $null
-							$lastRecordId = (Get-Variable $($fqdnDC + "_LastRecordId") -ErrorAction Stop).Value
+							$lastRecordId = (Get-Variable $($fqdnDC + "_LastRecordId") -ErrorAction STOP).Value
 							$securityEventsKerbSvcTicketOps | Where-Object { $_.RecordID -gt $lastRecordId } | ForEach-Object {
 								$filteredSecurityEventsKerbSvcTicketOps.Add($_)
 							}
@@ -10609,9 +10070,9 @@ If ($modeOfOperationNr -eq 2 -Or $modeOfOperationNr -eq 3 -Or $modeOfOperationNr
 				writeLog -dataToLog "  --> Found '$(($filteredSecurityEventsKerbSvcTicketOps | Measure-Object).Count)' Security Events For ID 4769 (Kerberos Service Ticket Operations) During THIS Run..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 				writeLog -dataToLog ""
 				writeLog -dataToLog "  --> Found '$(($suspiciousKerbSvcTicketOps | Measure-Object).Count)' Suspicious TGS Requests With Error '0x6', '0x1F' or '0x40' During THIS Run..." -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "      '0x6' = KDC_ERR_C_PRINCIPAL_UNKNOWN = Client not found in Kerberos database" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "      '0x1F' = KRB_AP_ERR_BAD_INTEGRITY = Integrity check on decrypted field failed" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
-				writeLog -dataToLog "      '0x40' = KDC_ERR_INVALID_SIG = The signature is invalid" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog "      '0x6'  = KDC_ERR_C_PRINCIPAL_UNKNOWN = Client not found in Kerberos database" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog "      '0x1F' = KRB_AP_ERR_BAD_INTEGRITY    = Integrity check on decrypted field failed" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
+				writeLog -dataToLog "      '0x40' = KDC_ERR_INVALID_SIG         = The signature is invalid" -lineType "REMARK" -logFileOnly $false -noDateTimeInLogLine $false
 
 				# Process Any Suspicious Kerberos Service Ticket Operations
 				$suspiciousKerbSvcTicketOpsProcessed = [System.Collections.Generic.List[Object]]::New()
@@ -10734,7 +10195,6 @@ If ($modeOfOperationNr -eq 8) {
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
-		#BREAK
 		EXIT
 	}
 
@@ -10811,7 +10271,6 @@ If ($modeOfOperationNr -eq 9) {
 			sendMailWithAttachmentAndDisplayOutput -mailToRecipients $mailToRecipients -mailCcRecipients $mailCcRecipients -logFilePath $logFilePath -zipFilePath $zipFilePath -context $context
 		}
 
-		#BREAK
 		EXIT
 	}
 

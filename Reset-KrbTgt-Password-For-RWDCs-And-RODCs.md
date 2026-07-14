@@ -2,7 +2,7 @@
 
 ## CURRENT version
 
-v4.0 - 2026-04-06
+v4.1 - 2026-07-14
 
 > [!WARNING]
 > Other versions of this script exist in other locations and/or in other forms. None of those clones are supported nor maintained by me in any way. Have issues? Update to the latest version available referenced in THIS page and try/test whatever you wanted to try/test. Still have issues? Raise an issue on [GITHUB](https://github.com/zjorz/Public-AD-Scripts/issues)
@@ -155,6 +155,31 @@ AUTOMATED TESTING (PASSWORD RESET ROUTINE)
 &nbsp;
 
 ## RELEASE NOTES
+* v4.1, 2026-07-14, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
+  * Code Improvement: Code reviewed by Claude AI --&gt; Added comment "# The 'DirectoryContext' Constructor Requires Plaintext Strings, So This Is Unavoidable With This API"
+  * Code Improvement: Code reviewed by Claude AI --&gt; Added warning in XML configuration file about the potential storage of credentials
+  * Code Improvement: Code reviewed by Claude AI --&gt; Consolidated "Write Exception Log" into a new function "writeExceptionLogError" and "writeExceptionLogWarning"
+  * Code Improvement: Code reviewed by Claude AI --&gt; Specified [CmdletBinding()] for all functions with parameters
+  * Code Improvement: Code reviewed by Claude AI --&gt; Move the disposal of the LDAP connections ($ldapConnection.Dispose()) to the Finally block
+  * Code Improvement: Code reviewed by Claude AI --&gt; Removed the unnecessary conversion from SecureString to PlainText to SecureString again
+  * Code Improvement: Code reviewed by Claude AI --&gt; Consolidated the logic for $localADForest with ($false) or without ($true) $admCrds into the function "setupLdapConnection"
+  * Code Improvement: Updated function "createTestKrbTgtADAccount"
+  * Code Improvement: Removing code duplications and code optimizations
+  * Code Improvement: Updated the function "determineUserAccountForRSoP" to support custom credentials to be able to target remote domains/forests
+  * Code Improvement: Updated the function "determineUserAccountForRSoP" to use Get-CimInstance without specifying a remote server FQDN if that FQDN matched the FQDN of the local DC
+  * Code Improvement: Updated the function "determineKerberosPolicySettings" to deal with the scenario where errors in RSoP processing may occur that influence the XML structure. An example of a possible error is a missing ADMX file
+  * Code Improvement: Redefining arrays/list correctly from @() to [System.Collections.Generic.List[string]]::new() or [System.Collections.Generic.List[object]]::new()
+  * Code Improvement: Redefining objects correctly from whatever was used to PSCustomObject and also stop using Add-Member
+  * Code Improvement: Updated the logic around using the function "determineUserAccountForRSoP"
+  * Code Improvement: Created an additional function "determineAdvancedAuditingSecuritySettings" and made sure it can deal with the scenario where errors in RSoP processing may occur that influence the XML structure. An example of a possible error is a missing ADMX file
+  * Code Improvement: Made some updates to the mode "Golden Ticket Monitor Mode" (Mode 7) (=EXPERIMENTAL!)
+  * Improved User Experience: Previously automation of the script was determine when all the parameters "modeOfOperation", "targetedADforestFQDN", "targetedADdomainFQDN" and "targetKrbTgtAccountScope" were specified through the command line. Automation of the script is now determine when only the parameter "targetKrbTgtAccountScope" is specified through the command line. This allows to run the script on-demand with almost all parameters preventing specification of details as much as possible
+  * Improved User Experience: When the account "krbtgt_AzureAD" is found it now also reports on the date/time its password was last set
+  * Improved User Experience: Updated the function "sendMailMessage" to add support to fully customize the mail SUBJECT and mail BODY as desired
+  * Improved User Experience: Updated the Configuration XML file "Reset-KrbTgt-Password-For-RWDCs-And-RODCs.xml" to add support to fully customize the mail SUBJECT and mail BODY as desired. With that the function "validateXMLConfigFileForNodes" was also updated
+  * Bug Fix: Fixed the definition of the function "writeLog" by renaming old references of "loggingDef" to "writeLogDef"
+  * Bug Fix: Fixed the definition of the variables "$maxTgtLifetimeHrs" and "$maxClockSkewMins" from "$script:maxTgtLifetimeHrs" to "$maxTgtLifetimeHrs", and "$script:maxClockSkewMins" to "$maxClockSkewMins" in calls to remote domains/forests
+  * Bug Fix: Updated the Required Security Option state with an expected value
 * v4.0, 2026-04-06, Jorge de Almeida Pinto [MVP Identity And Access - Security / Lead Identity/Security Architect]:
   * Code Improvement: Updated the function "portConnectionCheck" to better deal with multiple IPV4 addresses on either a single NIC, or multiple NICs (i.e. multi-homed) where all IPv4 have the same A record in DNS
   * Code Improvement: Added a check when no RWDCs are discovered in the AD domain within the OU 'Domain Controllers' and primaryGroupID 516 (RWDC) or 521 (RODC). It will then try to rediscover the DCs within the AD domain, report on those and finally abort the script.
@@ -597,13 +622,33 @@ Execute The Script - Automated Password Reset Routine And Sending The Log File T
 
 &nbsp;
 
-## CONFIGURATION File
+## CONFIGURATION XML File
 
 Use sample in: <https://github.com/zjorz/Public-AD-Scripts/blob/master/Reset-KrbTgt-Password-For-RWDCs-And-RODCs.xml>
 
 &nbsp;
 
-## SAMPLE SCENARIO(S) FOR PASSWORD RESET Routine
+## CUSTOMIZING MAIL SUBJECT/BODY
+
+This is done in the Configuration XML File!
+
+For the MAIL SUBJECT...
+In the XML element "&lt;mailSubject&gt;" define the textual subject and use the desired placeholders. A placeholder can be anything, just make sure it is recognizable as such.
+For example, use "REPLACE_ACCOUNT_SCOPE" to be the placeholder for the KrbTGT Account Scop chosen. In the PowerShell script look up the variable that provides that value. In that case it will be the variable "$targetKrbTgtAccountScope".
+Now in the Configuration XML File create a sub XML element called "mailReplacementOption" under the XML element "mailReplacementOptionsSUBJECT". For the sub xml element define the attribute (without the single quotes) 'placeholder = "REPLACE_ACCOUNT_SCOPE"' and the attribute (without the single quotes) 'replaceWith = "$targetKrbTgtAccountScope"'. Repeat this for every placeholder needed!
+See the Configuration XML File for an example!
+
+&nbsp;
+
+For the MAIL BODY...
+In the XML element "&lt;mailBody&gt;" define the HTML body taking into account the replacement of &lt; and &gt; with their ASCII counterpart and use the desired placeholders. A placeholder can be anything, just make sure it is recognizable as such.
+For example, use "REPLACE_AD_DOMAIN_FQDN" to be the placeholder for the AD Domain FQDN. In the PowerShell script look up the variable that provides that value. In that case it will be the variable "$($script:targetedADdomainFQDN)".
+Now in the Configuration XML File create a sub XML element called "mailReplacementOption" under the XML element "mailReplacementOptionsBODY". For the sub xml element define the attribute (without the single quotes) 'placeholder = "REPLACE_AD_DOMAIN_FQDN"' and the attribute (without the single quotes) 'replaceWith = "$($script:targetedADdomainFQDN)"'. Repeat this for every placeholder needed!
+See the Configuration XML File for an example!
+
+&nbsp;
+
+## SAMPLE SCENARIO(S) FOR PASSWORD RESET ROUTINE
 
 * 1stInterval = 3 and 2ndInterval = 1, the MINIMUM values
 * Password Was Reset A (Very) Long Time Ago, i.e., 100 days ago
