@@ -993,7 +993,11 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 		#add additional controls that caller may have passed
 		foreach ($ctrl in $AdditionalControls) { $rqAdd.Controls.Add($ctrl) > $null }
 
-		foreach ($prop in (Get-Member -InputObject $Object -MemberType NoteProperty)) {
+		# SDSP_INDIVIDUAL_UPDATES Updated: Replaced 'Get-Member -InputObject $Object' With The 'Where' Method And An Explicit (Case-Insensitive) Sort On The Name, Which Is The Same Order 'Get-Member' Returns.
+		# $Object Can Carry A Password (E.g. unicodePwd) And When PowerShell Module Logging Is Enabled, The Value Of Every Cmdlet Parameter Is Written To The Event Logs (Event ID 4103 In 'Microsoft-Windows-PowerShell/Operational' And Event ID 800 In 'Windows PowerShell'), Including That Password
+		$noteProperties = [System.Collections.Generic.List[Object]]::New($Object.PSObject.Properties.Where({ $_.MemberType -eq "NoteProperty" }))
+		$noteProperties.Sort([System.Comparison[Object]]{ Param($a, $b) [string]::Compare($a.Name, $b.Name, [System.StringComparison]::OrdinalIgnoreCase) })
+		foreach ($prop in $noteProperties) {
 			if ($prop.Name -eq "distinguishedName") { continue }
 			if ($IgnoredProps -contains $prop.Name) { continue }
 			[System.DirectoryServices.Protocols.DirectoryAttribute]$propAdd = new-object System.DirectoryServices.Protocols.DirectoryAttribute
@@ -1178,7 +1182,11 @@ More about System.DirectoryServices.Protocols: http://msdn.microsoft.com/en-us/l
 		#add additional controls that caller may have passed
 		foreach ($ctrl in $AdditionalControls) { $rqMod.Controls.Add($ctrl) > $null }
 
-		foreach ($prop in (Get-Member -InputObject $Object -MemberType NoteProperty)) {
+		# SDSP_INDIVIDUAL_UPDATES Updated: Replaced 'Get-Member -InputObject $Object' With The 'Where' Method And An Explicit (Case-Insensitive) Sort On The Name, Which Is The Same Order 'Get-Member' Returns.
+		# $Object Can Carry A Password (E.g. unicodePwd) And When PowerShell Module Logging Is Enabled, The Value Of Every Cmdlet Parameter Is Written To The Event Logs (Event ID 4103 In 'Microsoft-Windows-PowerShell/Operational' And Event ID 800 In 'Windows PowerShell'), Including That Password
+		$noteProperties = [System.Collections.Generic.List[Object]]::New($Object.PSObject.Properties.Where({ $_.MemberType -eq "NoteProperty" }))
+		$noteProperties.Sort([System.Comparison[Object]]{ Param($a, $b) [string]::Compare($a.Name, $b.Name, [System.StringComparison]::OrdinalIgnoreCase) })
+		foreach ($prop in $noteProperties) {
 			if ($prop.Name -eq "distinguishedName") { continue } #Dn is always ignored
 			if ($IgnoredProps -contains $prop.Name) { continue }
 			# SDSP_INDIVIDUAL_UPDATES Updated: $xxx.Count to $($xxx | Measure-Object).Count
